@@ -38,6 +38,7 @@ type CropOverlay struct {
 // Verify interface compliance at compile time.
 var _ desktop.Mouseable = (*CropOverlay)(nil)
 var _ desktop.Hoverable = (*CropOverlay)(nil)
+var _ fyne.Draggable = (*CropOverlay)(nil)
 
 // NewCropOverlay constructs a CropOverlay.
 func NewCropOverlay() *CropOverlay {
@@ -107,7 +108,21 @@ func (c *CropOverlay) MouseDown(ev *desktop.MouseEvent) {
 }
 
 // MouseUp implements desktop.Mouseable.
-func (c *CropOverlay) MouseUp(_ *desktop.MouseEvent) {
+func (c *CropOverlay) MouseUp(_ *desktop.MouseEvent) {}
+
+// Dragged implements fyne.Draggable. Fyne continues delivering Dragged events
+// even when the pointer moves outside the widget boundary, so the user can
+// drag a handle to the image edge without the drag cutting out.
+func (c *CropOverlay) Dragged(ev *fyne.DragEvent) {
+	if c.activeHandle < 0 || c.img == nil {
+		return
+	}
+	c.applyDrag(ev.Position)
+	c.Refresh()
+}
+
+// DragEnd implements fyne.Draggable.
+func (c *CropOverlay) DragEnd() {
 	c.activeHandle = -1
 	c.Refresh()
 }
@@ -116,21 +131,10 @@ func (c *CropOverlay) MouseUp(_ *desktop.MouseEvent) {
 func (c *CropOverlay) MouseIn(_ *desktop.MouseEvent) {}
 
 // MouseOut implements desktop.Hoverable.
-func (c *CropOverlay) MouseOut() {
-	if c.activeHandle >= 0 {
-		c.activeHandle = -1
-		c.Refresh()
-	}
-}
+func (c *CropOverlay) MouseOut() {}
 
 // MouseMoved implements desktop.Hoverable.
-func (c *CropOverlay) MouseMoved(ev *desktop.MouseEvent) {
-	if c.activeHandle < 0 || c.img == nil {
-		return
-	}
-	c.applyDrag(ev.Position)
-	c.Refresh()
-}
+func (c *CropOverlay) MouseMoved(_ *desktop.MouseEvent) {}
 
 // --- coordinate helpers ---
 
