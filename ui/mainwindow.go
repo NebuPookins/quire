@@ -11,8 +11,9 @@ import (
 	"fyne.io/fyne/v2"
 	"fyne.io/fyne/v2/container"
 	"fyne.io/fyne/v2/dialog"
-	"fyne.io/fyne/v2/storage"
 	"fyne.io/fyne/v2/widget"
+
+	"github.com/ncruces/zenity"
 
 	"quire/config"
 	"quire/detect"
@@ -265,56 +266,55 @@ func (mw *MainWindow) onScan() {
 	}()
 }
 
-// onSave handles the Save button.
+// onSave handles the Save button. Opens the native system file-save dialog in
+// a goroutine (zenity is blocking) and posts UI updates back via fyne.Do.
 func (mw *MainWindow) onSave() {
 	mw.setState(StateSaving)
 
-	d := dialog.NewFileSave(func(writer fyne.URIWriteCloser, err error) {
+	img := mw.scannedImage
+	quad := mw.cropOverlay.CurrentCrop()
+	freeQuad := mw.freeQuadChk.Checked
+	initialPath := filepath.Join(mw.cfg.LastSaveDir, "scan.jpg")
+
+	go func() {
+		path, err := zenity.SelectFileSave(
+			zenity.Filename(initialPath),
+			zenity.FileFilter{Name: "JPEG image", Patterns: []string{"*.jpg", "*.jpeg"}},
+		)
+		if err == zenity.ErrCanceled {
+			fyne.Do(func() { mw.setState(StateReady) })
+			return
+		}
 		if err != nil {
-			dialog.ShowError(fmt.Errorf("file dialog error: %w", err), mw.window)
-			mw.setState(StateReady)
-			return
-		}
-		if writer == nil {
-			// User cancelled.
-			mw.setState(StateReady)
-			return
-		}
-		path := writer.URI().Path()
-		writer.Close()
-
-		img := mw.scannedImage
-		quad := mw.cropOverlay.CurrentCrop()
-		freeQuad := mw.freeQuadChk.Checked
-
-		go func() {
-			var saveErr error
-			if freeQuad {
-				saveErr = export.SavePerspective(img, quad, path)
-			} else {
-				saveErr = export.SaveAxisAligned(img, quad[0], quad[2], path)
-			}
 			fyne.Do(func() {
-				if saveErr != nil {
-					dialog.ShowError(fmt.Errorf("save failed: %w", saveErr), mw.window)
-					mw.setState(StateReady)
-					return
-				}
-				mw.cfg.LastSaveDir = filepath.Dir(path)
-				config.Save(mw.cfg) //nolint:errcheck — non-critical
-				mw.app.SendNotification(fyne.NewNotification("Quire", "Saved "+path))
+				dialog.ShowError(fmt.Errorf("file dialog error: %w", err), mw.window)
 				mw.setState(StateReady)
 			})
-		}()
-	}, mw.window)
-
-	d.SetFileName("scan.jpg")
-	if mw.cfg.LastSaveDir != "" {
-		if loc, err := storage.ListerForURI(storage.NewFileURI(mw.cfg.LastSaveDir)); err == nil {
-			d.SetLocation(loc)
+			return
 		}
-	}
-	d.Show()
+		// Append .jpg if the user didn't type an extension.
+		if filepath.Ext(path) == "" {
+			path += ".jpg"
+		}
+
+		var saveErr error
+		if freeQuad {
+			saveErr = export.SavePerspective(img, quad, path)
+		} else {
+			saveErr = export.SaveAxisAligned(img, quad[0], quad[2], path)
+		}
+		fyne.Do(func() {
+			if saveErr != nil {
+				dialog.ShowError(fmt.Errorf("save failed: %w", saveErr), mw.window)
+				mw.setState(StateReady)
+				return
+			}
+			mw.cfg.LastSaveDir = filepath.Dir(path)
+			config.Save(mw.cfg) //nolint:errcheck — non-critical
+			mw.app.SendNotification(fyne.NewNotification("Quire", "Saved "+path))
+			mw.setState(StateReady)
+		})
+	}()
 }
 
 // onResetCrop restores the crop box to the auto-detected quad.
