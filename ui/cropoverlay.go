@@ -77,6 +77,15 @@ func (c *CropOverlay) CurrentCrop() [4]image.Point {
 	return c.cropPts
 }
 
+// placeholderLogoW/H are the display dimensions of the logo in the placeholder.
+// The logo SVG has a 4:1 aspect ratio (680×170 viewBox).
+const (
+	placeholderLogoW = 280
+	placeholderLogoH = 70
+	placeholderGap   = 12 // gap between logo and text
+	placeholderTextH = 24
+)
+
 // CreateRenderer implements fyne.Widget.
 func (c *CropOverlay) CreateRenderer() fyne.WidgetRenderer {
 	// bgImage renders the scanned image GPU-accelerated via Fyne's renderer.
@@ -88,6 +97,10 @@ func (c *CropOverlay) CreateRenderer() fyne.WidgetRenderer {
 	// raster draws the overlay: dim regions, crop border, handles, loupe.
 	raster := canvas.NewRaster(c.generateOverlay)
 
+	logoImage := canvas.NewImageFromResource(AppLogo)
+	logoImage.FillMode = canvas.ImageFillContain
+	logoImage.ScaleMode = canvas.ImageScaleSmooth
+
 	placeholder := canvas.NewText(c.placeholderText, color.RGBA{R: 180, G: 180, B: 180, A: 255})
 	placeholder.Alignment = fyne.TextAlignCenter
 
@@ -95,6 +108,7 @@ func (c *CropOverlay) CreateRenderer() fyne.WidgetRenderer {
 		overlay:     c,
 		bgImage:     bgImage,
 		raster:      raster,
+		logoImage:   logoImage,
 		placeholder: placeholder,
 	}
 }
@@ -517,6 +531,7 @@ type cropRenderer struct {
 	overlay     *CropOverlay
 	bgImage     *canvas.Image
 	raster      *canvas.Raster
+	logoImage   *canvas.Image
 	placeholder *canvas.Text
 }
 
@@ -524,8 +539,14 @@ func (r *cropRenderer) Layout(size fyne.Size) {
 	r.overlay.widgetSize = size
 	r.bgImage.Resize(size)
 	r.raster.Resize(size)
-	r.placeholder.Resize(fyne.NewSize(size.Width, 24))
-	r.placeholder.Move(fyne.NewPos(0, (size.Height-24)/2))
+
+	// Centre the logo + text block vertically.
+	blockH := float32(placeholderLogoH + placeholderGap + placeholderTextH)
+	blockY := (size.Height - blockH) / 2
+	r.logoImage.Resize(fyne.NewSize(placeholderLogoW, placeholderLogoH))
+	r.logoImage.Move(fyne.NewPos((size.Width-placeholderLogoW)/2, blockY))
+	r.placeholder.Resize(fyne.NewSize(size.Width, placeholderTextH))
+	r.placeholder.Move(fyne.NewPos(0, blockY+placeholderLogoH+placeholderGap))
 }
 
 func (r *cropRenderer) MinSize() fyne.Size {
@@ -535,21 +556,24 @@ func (r *cropRenderer) MinSize() fyne.Size {
 func (r *cropRenderer) Refresh() {
 	if r.overlay.img == nil {
 		r.bgImage.Hide()
+		r.logoImage.Show()
 		r.placeholder.Text = r.overlay.placeholderText
 		r.placeholder.Show()
 	} else {
 		r.bgImage.Image = r.overlay.img
 		r.bgImage.Show()
+		r.logoImage.Hide()
 		r.placeholder.Hide()
 	}
 	r.bgImage.Refresh()
 	r.raster.Refresh()
+	r.logoImage.Refresh()
 	r.placeholder.Refresh()
 }
 
 func (r *cropRenderer) Destroy() {}
 
-// Objects returns canvas objects bottom-to-top: bgImage, overlay raster, placeholder.
+// Objects returns canvas objects bottom-to-top: bgImage, overlay raster, logo, placeholder.
 func (r *cropRenderer) Objects() []fyne.CanvasObject {
-	return []fyne.CanvasObject{r.bgImage, r.raster, r.placeholder}
+	return []fyne.CanvasObject{r.bgImage, r.raster, r.logoImage, r.placeholder}
 }

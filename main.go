@@ -8,6 +8,7 @@ import (
 
 func main() {
 	a := app.NewWithID("net.nebupookins.quire")
+	a.SetIcon(ui.AppIcon)
 	mw := ui.NewMainWindow(a)
 	mw.Show()
 }
