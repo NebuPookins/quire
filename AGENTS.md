@@ -72,15 +72,17 @@ Files: `detect/edges.go`, `detect/cgo_flags.go`, `detect/edges_test.go`
 
 ---
 
-## Step 5 — Export (`export/jpeg.go`)
+## Step 5 — Export ✅ DONE
 
-- `SaveAxisAligned(img image.Image, topLeft, bottomRight image.Point, path string) error`
-  — crops the sub-image and encodes as JPEG quality 92.
-- `SavePerspective(img image.Image, quad [4]image.Point, path string) error`
-  — uses `gocv.GetPerspectiveTransform` + `gocv.WarpPerspective` to produce a flat
-  rectangular output. Output size = bounding rect of the four points. Encodes JPEG 92.
-- Both functions write to a temp file and rename (atomic write).
-- Unit-test axis-aligned crop with a known image and verify output dimensions.
+Files: `export/jpeg.go`, `export/cgo_flags.go`, `export/jpeg_test.go`
+
+- `SaveAxisAligned` — crops via `SubImage` (with pixel-copy fallback), encodes JPEG 92, atomic write.
+- `SavePerspective` — computes output size as `max(TR.X−TL.X, BR.X−BL.X)` × `max(BL.Y−TL.Y, BR.Y−TR.Y)`,
+  uses `gocv.GetPerspectiveTransform` + `gocv.WarpPerspective`, converts warped Mat back
+  via `mat.ToImage()`, then encodes JPEG 92. Returns error for degenerate quads.
+- `writeJPEG` — shared atomic-write helper (temp file + rename).
+- `cgo_flags.go` — `-Wl,--as-needed` to avoid linking libopencv_viz (same as detect).
+- 5 unit tests, all passing (`go test ./export/... -v`).
 
 ---
 
@@ -271,7 +273,7 @@ This is the most complex piece. Build it incrementally:
 | 2 ✅ | `config/config.go` | Persist/load last-save dir |
 | 3 ✅ | `scanner/scanner.go` | Device list, scan subprocess |
 | 4 ✅ | `detect/edges.go` | OpenCV quad detection |
-| 5 | `export/jpeg.go` | Axis-aligned + perspective JPEG export |
+| 5 ✅ | `export/jpeg.go` | Axis-aligned + perspective JPEG export |
 | 6 | `ui/mainwindow.go` | State machine, toolbar, button wiring |
 | 7 | `ui/cropoverlay.go` | Custom widget (image, handles, loupe) |
 | 8 | `ui/mainwindow.go` | Save handler wired to export + config |
