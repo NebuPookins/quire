@@ -24,10 +24,11 @@ import (
 type AppState int
 
 const (
-	StateIdle     AppState = iota // no scan yet
-	StateScanning                 // scan in progress
-	StateReady                    // scan acquired, ready to edit/save
-	StateSaving                   // save in progress
+	StateBootingUp AppState = iota // device discovery in progress
+	StateIdle                      // no scan yet
+	StateScanning                  // scan in progress
+	StateReady                     // scan acquired, ready to edit/save
+	StateSaving                    // save in progress
 )
 
 // MainWindow holds all application state and top-level UI references.
@@ -69,7 +70,7 @@ func NewMainWindow(a fyne.App) *MainWindow {
 	mw.spinner = widget.NewActivity()
 	mw.cropOverlay = NewCropOverlay()
 
-	mw.setState(StateIdle)
+	mw.setState(StateBootingUp)
 	mw.spinner.Hide()
 
 	toolbar := container.NewHBox(mw.deviceSel, mw.resSel, mw.modeSel)
@@ -97,7 +98,18 @@ func (mw *MainWindow) Show() {
 func (mw *MainWindow) setState(s AppState) {
 	mw.state = s
 	switch s {
+	case StateBootingUp:
+		mw.cropOverlay.SetPlaceholder("Please wait, detecting scanners…")
+		mw.deviceSel.Disable()
+		mw.resSel.Hide()
+		mw.modeSel.Hide()
+		mw.scanBtn.Disable()
+		mw.saveBtn.Disable()
+		mw.resetBtn.Disable()
+		mw.freeQuadChk.Disable()
 	case StateIdle:
+		mw.cropOverlay.SetPlaceholder("Press Scan to begin.")
+		mw.deviceSel.Enable()
 		if mw.selectedDevice.Name != "" {
 			mw.scanBtn.Enable()
 		} else {
@@ -129,6 +141,7 @@ func (mw *MainWindow) setState(s AppState) {
 func (mw *MainWindow) discoverDevices() {
 	devices, err := scanner.ListDevices()
 	fyne.Do(func() {
+		mw.setState(StateIdle)
 		if err != nil {
 			if errors.Is(err, scanner.ErrScanImageNotFound) {
 				dialog.ShowError(fmt.Errorf("scanimage not found on PATH — install SANE to use Quire"), mw.window)

@@ -24,6 +24,14 @@ func TestSetState(t *testing.T) {
 		resetEnabled bool
 	}{
 		{
+			name:         "BootingUp — all disabled",
+			setup:        func() { mw.selectedDevice = scanner.Device{Name: "test:dev"} },
+			state:        StateBootingUp,
+			scanEnabled:  false,
+			saveEnabled:  false,
+			resetEnabled: false,
+		},
+		{
 			name:         "Idle/no device — scan disabled",
 			setup:        func() { mw.selectedDevice = scanner.Device{} },
 			state:        StateIdle,

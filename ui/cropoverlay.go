@@ -27,11 +27,12 @@ var dimColor = image.NewUniform(color.RGBA{A: 165})
 type CropOverlay struct {
 	widget.BaseWidget
 
-	img          image.Image
-	cropPts      [4]image.Point
-	freeQuad     bool
-	activeHandle int // index of dragged handle, -1 = none
-	widgetSize   fyne.Size
+	img             image.Image
+	cropPts         [4]image.Point
+	freeQuad        bool
+	activeHandle    int // index of dragged handle, -1 = none
+	widgetSize      fyne.Size
+	placeholderText string
 }
 
 // Verify interface compliance at compile time.
@@ -40,9 +41,15 @@ var _ desktop.Hoverable = (*CropOverlay)(nil)
 
 // NewCropOverlay constructs a CropOverlay.
 func NewCropOverlay() *CropOverlay {
-	w := &CropOverlay{activeHandle: -1}
+	w := &CropOverlay{activeHandle: -1, placeholderText: "Press Scan to begin."}
 	w.ExtendBaseWidget(w)
 	return w
+}
+
+// SetPlaceholder updates the text shown when no image is loaded.
+func (c *CropOverlay) SetPlaceholder(text string) {
+	c.placeholderText = text
+	c.Refresh()
 }
 
 // SetImage updates the displayed image and triggers a refresh.
@@ -80,7 +87,7 @@ func (c *CropOverlay) CreateRenderer() fyne.WidgetRenderer {
 	// raster draws the overlay: dim regions, crop border, handles, loupe.
 	raster := canvas.NewRaster(c.generateOverlay)
 
-	placeholder := canvas.NewText("Press Scan to begin.", color.RGBA{R: 180, G: 180, B: 180, A: 255})
+	placeholder := canvas.NewText(c.placeholderText, color.RGBA{R: 180, G: 180, B: 180, A: 255})
 	placeholder.Alignment = fyne.TextAlignCenter
 
 	return &cropRenderer{
@@ -524,6 +531,7 @@ func (r *cropRenderer) MinSize() fyne.Size {
 func (r *cropRenderer) Refresh() {
 	if r.overlay.img == nil {
 		r.bgImage.Hide()
+		r.placeholder.Text = r.overlay.placeholderText
 		r.placeholder.Show()
 	} else {
 		r.bgImage.Image = r.overlay.img
@@ -532,6 +540,7 @@ func (r *cropRenderer) Refresh() {
 	}
 	r.bgImage.Refresh()
 	r.raster.Refresh()
+	r.placeholder.Refresh()
 }
 
 func (r *cropRenderer) Destroy() {}
