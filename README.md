@@ -3,6 +3,12 @@
 A desktop document scanning application for Arch Linux. Acquire an image from your
 scanner, adjust the crop box interactively, and export a JPEG.
 
+## Features
+
+- Doesn't create a new window for each scanned image.
+- Remembers the crop settings when scanning multiple same-sized pages.
+- Loupe allows you to crop with precision.
+
 ## Prerequisites
 
 Install system dependencies:
