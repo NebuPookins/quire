@@ -38,20 +38,18 @@ Files: `config/config.go`, `config/config_test.go`
 
 ---
 
-## Step 3 — Scanner Discovery & Subprocess (`scanner/scanner.go`)
+## Step 3 — Scanner Discovery & Subprocess ✅ DONE
 
-- `ListDevices() ([]string, error)` — runs `scanimage -L`, parses output lines of the
-  form `device \`<name>\` is ...`, returns the device name strings.
-  - If `scanimage` is not on PATH, return a sentinel error (`ErrScanImageNotFound`).
-- `Scan(device, mode string, resolution int) (image.Image, error)` — runs:
-  ```
-  scanimage --device <device> --format=pnm --mode <mode> --resolution <resolution>
-  ```
-  Captures stdout, decodes PNM via `golang.org/x/image/pnm` or the stdlib `image`
-  decoder (register a PNM decoder if needed). On non-zero exit or non-empty stderr,
-  return an error wrapping the stderr text.
-- Unit-test `ListDevices` by feeding it fake stdout strings (mock the exec call or
-  test the parser separately).
+Files: `scanner/scanner.go`, `scanner/scanner_test.go`
+
+- `parseDevices(output string) []string` — extracts device names from `scanimage -L`
+  output using a regex; tested directly without exec.
+- `ListDevices()` — runs `scanimage -L`, returns `ErrScanImageNotFound` if not on PATH.
+- `Scan()` — runs `scanimage --device ... --format=pnm --mode ... --resolution ...`;
+  returns error on non-zero exit or any stderr output.
+- `decodePNM()` — minimal built-in decoder for P4 (PBM/Lineart), P5 (PGM/Gray),
+  P6 (PPM/Color), including comment-line support. No extra dependency needed.
+- 10 unit tests, all passing (`go test ./scanner/... -v`).
 
 ---
 
@@ -257,7 +255,7 @@ This is the most complex piece. Build it incrementally:
 |---|---------|-------------|
 | 1 ✅ | `go.mod`, stubs, `main.go` | Compiles, blank window |
 | 2 ✅ | `config/config.go` | Persist/load last-save dir |
-| 3 | `scanner/scanner.go` | Device list, scan subprocess |
+| 3 ✅ | `scanner/scanner.go` | Device list, scan subprocess |
 | 4 | `detect/edges.go` | OpenCV quad detection |
 | 5 | `export/jpeg.go` | Axis-aligned + perspective JPEG export |
 | 6 | `ui/mainwindow.go` | State machine, toolbar, button wiring |
