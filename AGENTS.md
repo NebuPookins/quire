@@ -24,17 +24,17 @@ All stubs compile; unimplemented functions panic at runtime (intentional).
 
 ---
 
-## Step 2 — Config Persistence (`config` package or inline in `main.go`)
+## Step 2 — Config Persistence ✅ DONE
 
-File: `config/config.go` (add this package to the tree)
+Files: `config/config.go`, `config/config_test.go`
 
-- Define `Config struct { LastSaveDir string \`json:"last_save_dir"\` }`.
-- `Load() Config` — read `$XDG_CONFIG_HOME/quire/config.json` (fallback
-  `~/.config/quire/config.json`). On any error (missing, malformed) return defaults
-  (`LastSaveDir = ~/Documents/`). Never crash.
-- `Save(cfg Config) error` — write atomically to the same path, creating parent dirs
-  as needed.
-- Unit-test both functions (use a temp dir).
+- `configPath()` resolves `$XDG_CONFIG_HOME/quire/config.json`, falling back to
+  `~/.config/quire/config.json`.
+- `Load()` — reads and unmarshals JSON; returns defaults on any error (missing file,
+  malformed JSON, empty `LastSaveDir`). Never crashes.
+- `Save()` — creates parent dirs, writes to a temp file in the same directory, renames
+  atomically.
+- 5 unit tests, all passing (`go test ./config/... -v`).
 
 ---
 
@@ -256,7 +256,7 @@ This is the most complex piece. Build it incrementally:
 | # | File(s) | Deliverable |
 |---|---------|-------------|
 | 1 ✅ | `go.mod`, stubs, `main.go` | Compiles, blank window |
-| 2 | `config/config.go` | Persist/load last-save dir |
+| 2 ✅ | `config/config.go` | Persist/load last-save dir |
 | 3 | `scanner/scanner.go` | Device list, scan subprocess |
 | 4 | `detect/edges.go` | OpenCV quad detection |
 | 5 | `export/jpeg.go` | Axis-aligned + perspective JPEG export |
