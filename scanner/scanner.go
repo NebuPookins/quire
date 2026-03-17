@@ -129,13 +129,52 @@ func QueryOptions(device string) (DeviceOptions, error) {
 	return parseDeviceOptions(stdout.String()), nil
 }
 
+// scanCRLF is a bufio.SplitFunc that splits on \r, \n, or \r\n.
+// This is needed because scanimage writes progress updates using bare \r to
+// overwrite the terminal line, rather than \n.
+func scanCRLF(data []byte, atEOF bool) (advance int, token []byte, err error) {
+	if atEOF && len(data) == 0 {
+		return 0, nil, nil
+	}
+	for i, b := range data {
+		if b == '\r' || b == '\n' {
+			tok := data[:i]
+			adv := i + 1
+			// consume a following \n after \r
+			if b == '\r' && adv < len(data) && data[adv] == '\n' {
+				adv++
+			}
+			return adv, tok, nil
+		}
+	}
+	if atEOF {
+		return len(data), data, nil
+	}
+	return 0, nil, nil
+}
+
+// parseProgress parses a scanimage --progress stderr line of the form "Progress: 42%".
+// Returns the fractional value in [0, 1] and true on success; false otherwise.
+func parseProgress(line string) (float64, bool) {
+	val, ok := strings.CutPrefix(strings.TrimSpace(line), "Progress: ")
+	if !ok {
+		return 0, false
+	}
+	val = strings.TrimSuffix(val, "%")
+	pct, err := strconv.ParseFloat(val, 64)
+	if err != nil {
+		return 0, false
+	}
+	return pct / 100.0, true
+}
+
 // Scan acquires an image from the given device.
 // On non-zero exit or any stderr output, an error is returned wrapping the stderr text.
 //
 // progress is an optional callback invoked with values in [0, 1] as scan data arrives.
-// Pass nil if progress reporting is not needed.
-// When non-nil, the future implementation will pass --progress to scanimage and parse
-// its stderr output; the callback will be invoked on the caller's goroutine.
+// Pass nil if progress reporting is not needed. When non-nil, --progress is passed to
+// scanimage and stderr is parsed line by line; the callback is invoked on the caller's
+// goroutine for each "Progress: N%" line.
 //
 // mode and resolution are optional: pass nil to omit the corresponding flag and let
 // the device use its own default. This is appropriate when QueryOptions returns no
@@ -152,17 +191,61 @@ func Scan(ctx context.Context, device string, mode *Mode, resolution *int, progr
 	if resolution != nil {
 		args = append(args, "--resolution", strconv.Itoa(*resolution))
 	}
-	var stdout, stderr bytes.Buffer
+
+	var stdout bytes.Buffer
 	cmd := exec.CommandContext(ctx, bin, args...)
 	cmd.Stdout = &stdout
-	cmd.Stderr = &stderr
-	runErr := cmd.Run()
-	if stderrText := strings.TrimSpace(stderr.String()); stderrText != "" {
-		return nil, fmt.Errorf("scanimage: %s", stderrText)
+
+	if progress == nil {
+		var stderr bytes.Buffer
+		cmd.Stderr = &stderr
+		runErr := cmd.Run()
+		if stderrText := strings.TrimSpace(stderr.String()); stderrText != "" {
+			return nil, fmt.Errorf("scanimage: %s", stderrText)
+		}
+		if runErr != nil {
+			return nil, fmt.Errorf("scanimage: %w", runErr)
+		}
+	} else {
+		args = append(args, "--progress")
+		cmd = exec.CommandContext(ctx, bin, args...)
+		cmd.Stdout = &stdout
+
+		stderrPipe, err := cmd.StderrPipe()
+		if err != nil {
+			return nil, fmt.Errorf("scanimage stderr pipe: %w", err)
+		}
+		if err := cmd.Start(); err != nil {
+			return nil, fmt.Errorf("scanimage start: %w", err)
+		}
+
+		var nonProgress strings.Builder
+		sc := bufio.NewScanner(stderrPipe)
+		// scanimage writes progress with \r (not \n) to overwrite the terminal line.
+		// Split on either \r or \n so each progress update is its own token.
+		sc.Split(scanCRLF)
+		for sc.Scan() {
+			line := sc.Text()
+			if pct, ok := parseProgress(line); ok {
+				progress(pct)
+			} else if strings.TrimSpace(line) != "" {
+				if nonProgress.Len() > 0 {
+					nonProgress.WriteByte('\n')
+				}
+				nonProgress.WriteString(line)
+			}
+		}
+
+		_ = sc.Err() // error surfaced via cmd.Wait below
+		runErr := cmd.Wait()
+		if errText := strings.TrimSpace(nonProgress.String()); errText != "" {
+			return nil, fmt.Errorf("scanimage: %s", errText)
+		}
+		if runErr != nil {
+			return nil, fmt.Errorf("scanimage: %w", runErr)
+		}
 	}
-	if runErr != nil {
-		return nil, fmt.Errorf("scanimage: %w", runErr)
-	}
+
 	img, err := decodePNM(bytes.NewReader(stdout.Bytes()))
 	if err != nil {
 		return nil, fmt.Errorf("decode PNM: %w", err)

@@ -1,9 +1,11 @@
 package scanner
 
 import (
+	"bufio"
 	"bytes"
 	"fmt"
 	"image"
+	"strings"
 	"testing"
 )
 
@@ -211,5 +213,55 @@ func TestDecodePNM_PPMWithComment(t *testing.T) {
 	}
 	if img.Bounds().Dx() != 2 {
 		t.Fatalf("unexpected bounds: %v", img.Bounds())
+	}
+}
+
+// --- parseProgress ---
+
+func TestParseProgress(t *testing.T) {
+	cases := []struct {
+		line    string
+		want    float64
+		wantOK  bool
+	}{
+		{"Progress: 0%", 0.0, true},
+		{"Progress: 42%", 0.42, true},
+		{"Progress: 100%", 1.0, true},
+		{"  Progress: 75%  ", 0.75, true}, // leading/trailing whitespace
+		{"scanimage: scanning", 0, false},  // non-progress line
+		{"", 0, false},
+		{"Progress: abc%", 0, false}, // non-numeric
+	}
+	for _, tc := range cases {
+		got, ok := parseProgress(tc.line)
+		if ok != tc.wantOK {
+			t.Errorf("parseProgress(%q): ok=%v, want %v", tc.line, ok, tc.wantOK)
+			continue
+		}
+		if ok && got != tc.want {
+			t.Errorf("parseProgress(%q): got %v, want %v", tc.line, got, tc.want)
+		}
+	}
+}
+
+// TestScanCRLF verifies that scanCRLF splits on bare \r as well as \n,
+// so that scanimage's carriage-return progress output is tokenised correctly.
+func TestScanCRLF(t *testing.T) {
+	// Simulate scanimage stderr: progress updates separated by \r, final \n.
+	input := "Progress: 10%\rProgress: 50%\rProgress: 100%\n"
+	sc := bufio.NewScanner(strings.NewReader(input))
+	sc.Split(scanCRLF)
+	var tokens []string
+	for sc.Scan() {
+		tokens = append(tokens, sc.Text())
+	}
+	want := []string{"Progress: 10%", "Progress: 50%", "Progress: 100%"}
+	if len(tokens) != len(want) {
+		t.Fatalf("got tokens %v, want %v", tokens, want)
+	}
+	for i, tok := range tokens {
+		if tok != want[i] {
+			t.Errorf("token[%d] = %q, want %q", i, tok, want[i])
+		}
 	}
 }

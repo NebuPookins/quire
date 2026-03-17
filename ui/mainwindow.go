@@ -52,6 +52,7 @@ type MainWindow struct {
 	resSel      *widget.Select
 	modeSel     *widget.Select
 	spinner     *widget.Activity
+	progressBar *widget.ProgressBar
 	cropOverlay *CropOverlay
 }
 
@@ -69,14 +70,16 @@ func NewMainWindow(a fyne.App) *MainWindow {
 	mw.resSel = widget.NewSelect(nil, nil)
 	mw.modeSel = widget.NewSelect(nil, nil)
 	mw.spinner = widget.NewActivity()
+	mw.progressBar = widget.NewProgressBar()
 	mw.cropOverlay = NewCropOverlay()
 
 	mw.setState(StateBootingUp)
 	mw.spinner.Hide()
+	mw.progressBar.Hide()
 
 	toolbar := container.NewHBox(mw.deviceSel, mw.resSel, mw.modeSel)
 	leftBar := container.NewHBox(mw.resetBtn, mw.freeQuadChk)
-	rightBar := container.NewHBox(mw.spinner, mw.scanBtn, mw.saveBtn)
+	rightBar := container.NewHBox(mw.spinner, mw.progressBar, mw.scanBtn, mw.saveBtn)
 	bottomBar := container.NewBorder(nil, nil, leftBar, rightBar)
 	content := container.NewBorder(toolbar, bottomBar, nil, nil, mw.cropOverlay)
 
@@ -241,6 +244,8 @@ func (mw *MainWindow) onScan() {
 	mw.setState(StateScanning)
 	mw.spinner.Show()
 	mw.spinner.Start()
+	mw.progressBar.SetValue(0)
+	mw.progressBar.Show()
 
 	dev := mw.selectedDevice
 
@@ -257,10 +262,15 @@ func (mw *MainWindow) onScan() {
 	}
 
 	go func() {
-		img, scanErr := scanner.Scan(context.Background(), dev.Name, mode, resolution, nil)
+		progressFn := func(pct float64) {
+			fyne.Do(func() { mw.progressBar.SetValue(pct) })
+		}
+		img, scanErr := scanner.Scan(context.Background(), dev.Name, mode, resolution, progressFn)
 		fyne.Do(func() {
 			mw.spinner.Stop()
 			mw.spinner.Hide()
+			mw.progressBar.Hide()
+			mw.progressBar.SetValue(0)
 			if scanErr != nil {
 				dialog.ShowError(fmt.Errorf("scan failed: %w", scanErr), mw.window)
 				mw.setState(StateIdle)
