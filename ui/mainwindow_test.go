@@ -5,8 +5,6 @@ import (
 	"testing"
 
 	"fyne.io/fyne/v2/test"
-
-	"quire/scanner"
 )
 
 // TestScanCropPersistence is a regression test: the second scan must display
@@ -54,23 +52,31 @@ func TestSetState(t *testing.T) {
 	}{
 		{
 			name:         "BootingUp — all disabled",
-			setup:        func() { mw.selectedDevice = scanner.Device{Name: "test:dev"} },
+			setup:        func() {},
 			state:        StateBootingUp,
 			scanEnabled:  false,
 			saveEnabled:  false,
 			resetEnabled: false,
 		},
 		{
-			name:         "Idle/no device — scan disabled",
-			setup:        func() { mw.selectedDevice = scanner.Device{} },
-			state:        StateIdle,
+			name:         "WaitingForDevice — all disabled",
+			setup:        func() {},
+			state:        StateWaitingForDevice,
 			scanEnabled:  false,
 			saveEnabled:  false,
 			resetEnabled: false,
 		},
 		{
-			name:         "Idle/device selected — scan enabled",
-			setup:        func() { mw.selectedDevice = scanner.Device{Name: "test:dev"} },
+			name:         "WaitingForOptions — all disabled",
+			setup:        func() {},
+			state:        StateWaitingForOptions,
+			scanEnabled:  false,
+			saveEnabled:  false,
+			resetEnabled: false,
+		},
+		{
+			name:         "Idle — scan enabled",
+			setup:        func() {},
 			state:        StateIdle,
 			scanEnabled:  true,
 			saveEnabled:  false,

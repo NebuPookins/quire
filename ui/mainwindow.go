@@ -25,11 +25,13 @@ import (
 type AppState int
 
 const (
-	StateBootingUp AppState = iota // device discovery in progress
-	StateIdle                      // no scan yet
-	StateScanning                  // scan in progress
-	StateReady                     // scan acquired, ready to edit/save
-	StateSaving                    // save in progress
+	StateBootingUp         AppState = iota // device discovery in progress
+	StateWaitingForDevice                  // devices listed; user must pick one
+	StateWaitingForOptions                 // device selected; querying its capabilities
+	StateIdle                              // device ready; no scan yet
+	StateScanning                          // scan in progress
+	StateReady                             // scan acquired, ready to edit/save
+	StateSaving                            // save in progress
 )
 
 // MainWindow holds all application state and top-level UI references.
@@ -111,28 +113,53 @@ func (mw *MainWindow) setState(s AppState) {
 		mw.saveBtn.Disable()
 		mw.resetBtn.Disable()
 		mw.freeQuadChk.Disable()
+	case StateWaitingForDevice:
+		mw.cropOverlay.SetPlaceholder("Select a scanner from the Device dropdown.")
+		mw.deviceSel.Enable()
+		mw.resSel.Hide()
+		mw.modeSel.Hide()
+		mw.scanBtn.Disable()
+		mw.saveBtn.Disable()
+		mw.resetBtn.Disable()
+		mw.freeQuadChk.Disable()
+	case StateWaitingForOptions:
+		mw.cropOverlay.SetPlaceholder("Detecting scanner options…")
+		mw.deviceSel.Disable()
+		mw.resSel.Hide()
+		mw.modeSel.Hide()
+		mw.scanBtn.Disable()
+		mw.saveBtn.Disable()
+		mw.resetBtn.Disable()
+		mw.freeQuadChk.Disable()
 	case StateIdle:
 		mw.cropOverlay.SetPlaceholder("Press Scan to begin.")
 		mw.deviceSel.Enable()
-		if mw.selectedDevice.Name != "" {
-			mw.scanBtn.Enable()
-		} else {
-			mw.scanBtn.Disable()
-		}
+		mw.resSel.Enable()
+		mw.modeSel.Enable()
+		mw.scanBtn.Enable()
 		mw.saveBtn.Disable()
 		mw.resetBtn.Disable()
 		mw.freeQuadChk.Disable()
 	case StateScanning:
+		mw.deviceSel.Disable()
+		mw.resSel.Disable()
+		mw.modeSel.Disable()
 		mw.scanBtn.Disable()
 		mw.saveBtn.Disable()
 		mw.resetBtn.Disable()
 		mw.freeQuadChk.Disable()
 	case StateReady:
+		mw.deviceSel.Enable()
+		mw.resSel.Enable()
+		mw.modeSel.Enable()
 		mw.scanBtn.Enable()
 		mw.saveBtn.Enable()
 		mw.resetBtn.Enable()
 		mw.freeQuadChk.Enable()
 	case StateSaving:
+		mw.deviceSel.Disable()
+		mw.resSel.Disable()
+		mw.modeSel.Disable()
 		mw.scanBtn.Disable()
 		mw.saveBtn.Disable()
 		mw.resetBtn.Disable()
@@ -145,8 +172,8 @@ func (mw *MainWindow) setState(s AppState) {
 func (mw *MainWindow) discoverDevices() {
 	devices, err := scanner.ListDevices()
 	fyne.Do(func() {
-		mw.setState(StateIdle)
 		if err != nil {
+			mw.setState(StateWaitingForDevice)
 			if errors.Is(err, scanner.ErrScanImageNotFound) {
 				dialog.ShowError(fmt.Errorf("scanimage not found on PATH — install SANE to use Quire"), mw.window)
 			} else {
@@ -155,6 +182,7 @@ func (mw *MainWindow) discoverDevices() {
 			return
 		}
 		if len(devices) == 0 {
+			mw.setState(StateWaitingForDevice)
 			dialog.ShowInformation("No scanners found",
 				"No scanners were detected by SANE.\nConnect a scanner and restart.", mw.window)
 			return
@@ -178,8 +206,10 @@ func (mw *MainWindow) discoverDevices() {
 			autoSelect = descs[0]
 		}
 		if autoSelect != "" {
+			// onDeviceSelected fires via SetSelected and transitions to StateWaitingForOptions.
 			mw.deviceSel.SetSelected(autoSelect)
-			// onDeviceSelected fires automatically via SetSelected.
+		} else {
+			mw.setState(StateWaitingForDevice)
 		}
 	})
 }
@@ -194,6 +224,7 @@ func (mw *MainWindow) onDeviceSelected(desc string) {
 	}
 	mw.cfg.LastDevice = mw.selectedDevice.Name
 	config.Save(mw.cfg) //nolint:errcheck — non-critical
+	mw.setState(StateWaitingForOptions)
 	go mw.queryDeviceOptions()
 }
 
@@ -204,6 +235,7 @@ func (mw *MainWindow) queryDeviceOptions() {
 	fyne.Do(func() {
 		if err != nil {
 			dialog.ShowError(fmt.Errorf("failed to query device options: %w", err), mw.window)
+			mw.setState(StateWaitingForDevice)
 			return
 		}
 
@@ -235,7 +267,11 @@ func (mw *MainWindow) queryDeviceOptions() {
 			mw.modeSel.Refresh()
 		}
 
-		mw.setState(mw.state) // re-evaluates scanBtn based on selectedDevice
+		if mw.scannedImage != nil {
+			mw.setState(StateReady)
+		} else {
+			mw.setState(StateIdle)
+		}
 	})
 }
 
