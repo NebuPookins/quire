@@ -78,6 +78,9 @@ func TestParseDeviceOptions_ModesAndResolutions(t *testing.T) {
 	if len(opts.Modes) != 2 || opts.Modes[0] != "Color" || opts.Modes[1] != "Gray" {
 		t.Errorf("unexpected modes: %v", opts.Modes)
 	}
+	if opts.DefaultMode != "Gray" {
+		t.Errorf("unexpected DefaultMode: %q", opts.DefaultMode)
+	}
 	want := []int{4800, 2400, 1200, 600, 300, 150, 100, 75}
 	if len(opts.Resolutions) != len(want) {
 		t.Fatalf("want %d resolutions, got %d: %v", len(want), len(opts.Resolutions), opts.Resolutions)

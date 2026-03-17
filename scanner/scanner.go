@@ -68,6 +68,7 @@ func ListDevices() ([]Device, error) {
 // DeviceOptions holds the scan options supported by a specific device.
 type DeviceOptions struct {
 	Modes       []Mode
+	DefaultMode Mode  // device-reported default, e.g. "Gray"; empty if not advertised
 	Resolutions []int
 }
 
@@ -80,17 +81,22 @@ type DeviceOptions struct {
 //	--resolution 4800|2400|1200|600|300|150|100|75dpi [75]
 //
 // The "dpi" suffix may appear on any value; values are listed highest-first.
+// The value in square brackets is the device-reported default.
 func parseDeviceOptions(output string) DeviceOptions {
 	var opts DeviceOptions
 	for _, line := range strings.Split(output, "\n") {
 		line = strings.TrimSpace(line)
 		if vals, ok := strings.CutPrefix(line, "--mode "); ok {
-			// Drop the trailing " [default]" section.
-			vals, _, _ = strings.Cut(vals, " ")
-			for _, v := range strings.Split(vals, "|") {
+			values, rest, _ := strings.Cut(vals, " ")
+			for _, v := range strings.Split(values, "|") {
 				if v != "" {
 					opts.Modes = append(opts.Modes, Mode(v))
 				}
+			}
+			// Extract default from "[Gray]" bracket.
+			if def, ok := strings.CutPrefix(strings.TrimSpace(rest), "["); ok {
+				def, _, _ = strings.Cut(def, "]")
+				opts.DefaultMode = Mode(def)
 			}
 		}
 		if vals, ok := strings.CutPrefix(line, "--resolution "); ok {
@@ -130,18 +136,24 @@ func QueryOptions(device string) (DeviceOptions, error) {
 // Pass nil if progress reporting is not needed.
 // When non-nil, the future implementation will pass --progress to scanimage and parse
 // its stderr output; the callback will be invoked on the caller's goroutine.
-func Scan(ctx context.Context, device string, mode Mode, resolution int, progress func(float64)) (image.Image, error) {
+//
+// mode and resolution are optional: pass nil to omit the corresponding flag and let
+// the device use its own default. This is appropriate when QueryOptions returns no
+// values for that option.
+func Scan(ctx context.Context, device string, mode *Mode, resolution *int, progress func(float64)) (image.Image, error) {
 	bin, err := exec.LookPath("scanimage")
 	if err != nil {
 		return nil, ErrScanImageNotFound
 	}
+	args := []string{"--device", device, "--format=pnm"}
+	if mode != nil {
+		args = append(args, "--mode", string(*mode))
+	}
+	if resolution != nil {
+		args = append(args, "--resolution", strconv.Itoa(*resolution))
+	}
 	var stdout, stderr bytes.Buffer
-	cmd := exec.CommandContext(ctx, bin,
-		"--device", device,
-		"--format=pnm",
-		"--mode", string(mode),
-		"--resolution", strconv.Itoa(resolution),
-	)
+	cmd := exec.CommandContext(ctx, bin, args...)
 	cmd.Stdout = &stdout
 	cmd.Stderr = &stderr
 	runErr := cmd.Run()

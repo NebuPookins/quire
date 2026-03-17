@@ -174,21 +174,33 @@ func (mw *MainWindow) queryDeviceOptions() {
 			return
 		}
 
-		resStrs := make([]string, len(opts.Resolutions))
-		for i, r := range opts.Resolutions {
-			resStrs[i] = strconv.Itoa(r)
+		if len(opts.Resolutions) == 0 {
+			mw.resSel.Hide()
+		} else {
+			resStrs := make([]string, len(opts.Resolutions))
+			for i, r := range opts.Resolutions {
+				resStrs[i] = strconv.Itoa(r)
+			}
+			mw.resSel.Options = resStrs
+			mw.resSel.SetSelected(strconv.Itoa(closestResolution(opts.Resolutions, 300)))
+			mw.resSel.Show()
+			mw.resSel.Refresh()
 		}
-		mw.resSel.Options = resStrs
-		mw.resSel.SetSelected(preferredOption(resStrs, "300"))
-		mw.resSel.Refresh()
 
-		modeStrs := make([]string, len(opts.Modes))
-		for i, m := range opts.Modes {
-			modeStrs[i] = string(m)
+		if len(opts.Modes) == 0 {
+			mw.modeSel.Hide()
+		} else {
+			modeStrs := make([]string, len(opts.Modes))
+			for i, m := range opts.Modes {
+				modeStrs[i] = string(m)
+			}
+			mw.modeSel.Options = modeStrs
+			// Prefer "Color"; fall back to the device's advertised default; then first option.
+			sel := preferredMode(modeStrs, string(opts.DefaultMode))
+			mw.modeSel.SetSelected(sel)
+			mw.modeSel.Show()
+			mw.modeSel.Refresh()
 		}
-		mw.modeSel.Options = modeStrs
-		mw.modeSel.SetSelected(preferredOption(modeStrs, "Color"))
-		mw.modeSel.Refresh()
 
 		mw.setState(mw.state) // re-evaluates scanBtn based on selectedDevice
 	})
@@ -201,14 +213,21 @@ func (mw *MainWindow) onScan() {
 	mw.spinner.Start()
 
 	dev := mw.selectedDevice
-	mode := scanner.Mode(mw.modeSel.Selected)
-	res, err := strconv.Atoi(mw.resSel.Selected)
-	if err != nil {
-		res = 300
+
+	var mode *scanner.Mode
+	if sel := mw.modeSel.Selected; sel != "" {
+		m := scanner.Mode(sel)
+		mode = &m
+	}
+	var resolution *int
+	if sel := mw.resSel.Selected; sel != "" {
+		if r, err := strconv.Atoi(sel); err == nil {
+			resolution = &r
+		}
 	}
 
 	go func() {
-		img, scanErr := scanner.Scan(context.Background(), dev.Name, mode, res, nil)
+		img, scanErr := scanner.Scan(context.Background(), dev.Name, mode, resolution, nil)
 		fyne.Do(func() {
 			mw.spinner.Stop()
 			mw.spinner.Hide()
@@ -284,16 +303,37 @@ func axisAlignedQuad(pts [4]image.Point) [4]image.Point {
 	}
 }
 
-// preferredOption returns target if it appears in options, otherwise options[0].
-// Returns "" if options is empty.
-func preferredOption(options []string, target string) string {
+// closestResolution returns the element of options whose value is closest to target.
+func closestResolution(options []int, target int) int {
+	best := options[0]
+	bestDiff := abs(options[0] - target)
+	for _, o := range options[1:] {
+		if d := abs(o - target); d < bestDiff {
+			bestDiff = d
+			best = o
+		}
+	}
+	return best
+}
+
+func abs(x int) int {
+	if x < 0 {
+		return -x
+	}
+	return x
+}
+
+// preferredMode returns "Color" if present, then deviceDefault if present, then options[0].
+func preferredMode(options []string, deviceDefault string) string {
 	for _, o := range options {
-		if o == target {
+		if o == "Color" {
 			return o
 		}
 	}
-	if len(options) > 0 {
-		return options[0]
+	for _, o := range options {
+		if o == deviceDefault {
+			return o
+		}
 	}
-	return ""
+	return options[0]
 }
