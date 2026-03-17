@@ -56,7 +56,7 @@ func ListDevices() ([]Device, error) {
 		return nil, ErrScanImageNotFound
 	}
 	var stdout, stderr bytes.Buffer
-	cmd := exec.Command(bin, "--formatted-device-list=%d|%v %m %t")
+	cmd := exec.Command(bin, "--formatted-device-list=%d|%v %m %t\n")
 	cmd.Stdout = &stdout
 	cmd.Stderr = &stderr
 	if err := cmd.Run(); err != nil {
