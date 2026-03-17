@@ -7,8 +7,6 @@ import (
 	"image/jpeg"
 	"os"
 	"path/filepath"
-
-	"gocv.io/x/gocv"
 )
 
 const jpegQuality = 92
@@ -34,38 +32,11 @@ func SavePerspective(img image.Image, quad [4]image.Point, path string) error {
 	if w <= 0 || h <= 0 {
 		return fmt.Errorf("degenerate quad: computed output size %dx%d", w, h)
 	}
-
-	src, err := gocv.ImageToMatRGB(img)
+	warped, err := perspectiveWarp(img, quad, w, h)
 	if err != nil {
-		return fmt.Errorf("convert to mat: %w", err)
-	}
-	defer src.Close()
-
-	srcPts := gocv.NewPointVectorFromPoints([]image.Point{tl, tr, br, bl})
-	defer srcPts.Close()
-
-	dstPts := gocv.NewPointVectorFromPoints([]image.Point{
-		{X: 0, Y: 0},
-		{X: w, Y: 0},
-		{X: w, Y: h},
-		{X: 0, Y: h},
-	})
-	defer dstPts.Close()
-
-	transform := gocv.GetPerspectiveTransform(srcPts, dstPts)
-	defer transform.Close()
-
-	warped := gocv.NewMat()
-	defer warped.Close()
-	if err := gocv.WarpPerspective(src, &warped, transform, image.Point{X: w, Y: h}); err != nil {
 		return fmt.Errorf("warp perspective: %w", err)
 	}
-
-	out, err := warped.ToImage()
-	if err != nil {
-		return fmt.Errorf("convert mat to image: %w", err)
-	}
-	return writeJPEG(out, path)
+	return writeJPEG(warped, path)
 }
 
 // cropImage returns a sub-image of img cropped to r.

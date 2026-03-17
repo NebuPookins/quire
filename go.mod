@@ -2,7 +2,10 @@ module quire
 
 go 1.26.1
 
-require fyne.io/fyne/v2 v2.7.3
+require (
+	fyne.io/fyne/v2 v2.7.3
+	github.com/ncruces/zenity v0.10.14
+)
 
 require (
 	fyne.io/systray v1.12.0 // indirect
@@ -27,7 +30,6 @@ require (
 	github.com/josephspurrier/goversioninfo v1.4.1 // indirect
 	github.com/jsummers/gobmp v0.0.0-20230614200233-a9de23ed2e25 // indirect
 	github.com/kr/text v0.2.0 // indirect
-	github.com/ncruces/zenity v0.10.14 // indirect
 	github.com/nfnt/resize v0.0.0-20180221191011-83c6a9932646 // indirect
 	github.com/nicksnyder/go-i18n/v2 v2.5.1 // indirect
 	github.com/pmezard/go-difflib v1.0.0 // indirect
@@ -37,7 +39,6 @@ require (
 	github.com/srwiley/rasterx v0.0.0-20220730225603-2ab79fcdd4ef // indirect
 	github.com/stretchr/testify v1.11.1 // indirect
 	github.com/yuin/goldmark v1.7.8 // indirect
-	gocv.io/x/gocv v0.43.0 // indirect
 	golang.org/x/image v0.24.0 // indirect
 	golang.org/x/net v0.35.0 // indirect
 	golang.org/x/sys v0.30.0 // indirect

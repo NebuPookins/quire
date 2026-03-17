@@ -1,12 +1,41 @@
 package ui
 
 import (
+	"image"
 	"testing"
 
 	"fyne.io/fyne/v2/test"
 
 	"quire/scanner"
 )
+
+// TestScanCropPersistence is a regression test: the second scan must display
+// the crop the user set after the first scan, not reset to the full image bounds.
+func TestScanCropPersistence(t *testing.T) {
+	a := test.NewApp()
+	defer a.Quit()
+	mw := NewMainWindow(a)
+
+	img := image.NewGray(image.Rect(0, 0, 100, 80))
+
+	// First scan: expect full image bounds.
+	mw.applyScanResult(img)
+	wantFull := [4]image.Point{{0, 0}, {100, 0}, {100, 80}, {0, 80}}
+	if got := mw.cropOverlay.CurrentCrop(); got != wantFull {
+		t.Fatalf("first scan: crop = %v, want full bounds %v", got, wantFull)
+	}
+
+	// User adjusts the crop handles.
+	userCrop := [4]image.Point{{10, 10}, {90, 10}, {90, 70}, {10, 70}}
+	mw.cropOverlay.SetCrop(userCrop, false)
+
+	// Second scan: applyScanResult must reuse the overlay's existing crop,
+	// not overwrite it with the full image bounds.
+	mw.applyScanResult(img)
+	if got := mw.cropOverlay.CurrentCrop(); got != userCrop {
+		t.Errorf("second scan: crop = %v, want user's crop %v", got, userCrop)
+	}
+}
 
 // TestSetState verifies the F7 state table: which buttons are enabled/disabled
 // in each AppState.

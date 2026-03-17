@@ -39,7 +39,7 @@ type MainWindow struct {
 	state  AppState
 
 	scannedImage   image.Image
-	detectedQuad   [4]image.Point
+	detectedQuad   *[4]image.Point // nil before the first scan; full bounds thereafter (Reset Crop target)
 	cfg            config.Config
 	devices        []scanner.Device
 	selectedDevice scanner.Device
@@ -253,17 +253,34 @@ func (mw *MainWindow) onScan() {
 				mw.setState(StateIdle)
 				return
 			}
-			mw.scannedImage = img
-			mw.detectedQuad = detect.DetectQuad(img)
-			quad := mw.detectedQuad
-			if !mw.freeQuadChk.Checked {
-				quad = axisAlignedQuad(mw.detectedQuad)
-			}
-			mw.cropOverlay.SetImage(img)
-			mw.cropOverlay.SetCrop(quad, mw.freeQuadChk.Checked)
-			mw.setState(StateReady)
+			mw.applyScanResult(img)
 		})
 	}()
+}
+
+// applyScanResult updates the UI after a successful scan.
+// On the first scan detectedQuad is nil, so the crop defaults to the full image
+// bounds. On subsequent scans detectedQuad is already set and left untouched;
+// the overlay's existing crop (whatever the user last set) is reused instead,
+// clamped to the new image bounds in case the resolution changed.
+func (mw *MainWindow) applyScanResult(img image.Image) {
+	mw.scannedImage = img
+
+	var quad [4]image.Point
+	if mw.detectedQuad == nil {
+		q := detect.DetectQuad(img)
+		mw.detectedQuad = &q
+		quad = q
+	} else {
+		quad = clampQuad(mw.cropOverlay.CurrentCrop(), img.Bounds())
+	}
+
+	if !mw.freeQuadChk.Checked {
+		quad = axisAlignedQuad(quad)
+	}
+	mw.cropOverlay.SetImage(img)
+	mw.cropOverlay.SetCrop(quad, mw.freeQuadChk.Checked)
+	mw.setState(StateReady)
 }
 
 // onSave handles the Save button. Opens the native system file-save dialog in
@@ -317,12 +334,16 @@ func (mw *MainWindow) onSave() {
 	}()
 }
 
-// onResetCrop restores the crop box to the auto-detected quad.
+// onResetCrop restores the crop box to the full image bounds recorded on the
+// first scan.
 func (mw *MainWindow) onResetCrop() {
+	if mw.detectedQuad == nil {
+		return
+	}
 	if mw.freeQuadChk.Checked {
-		mw.cropOverlay.SetCrop(mw.detectedQuad, true)
+		mw.cropOverlay.SetCrop(*mw.detectedQuad, true)
 	} else {
-		mw.cropOverlay.SetCrop(axisAlignedQuad(mw.detectedQuad), false)
+		mw.cropOverlay.SetCrop(axisAlignedQuad(*mw.detectedQuad), false)
 	}
 }
 
@@ -337,6 +358,25 @@ func (mw *MainWindow) onFreeQuadToggle(checked bool) {
 	} else {
 		mw.cropOverlay.SetCrop(axisAlignedQuad(pts), false)
 	}
+}
+
+// clampQuad clamps each point in pts to the given rectangle, so that a quad
+// from a previous scan remains valid when the new image is a different size.
+func clampQuad(pts [4]image.Point, r image.Rectangle) [4]image.Point {
+	clamp := func(p image.Point) image.Point {
+		if p.X < r.Min.X {
+			p.X = r.Min.X
+		} else if p.X > r.Max.X {
+			p.X = r.Max.X
+		}
+		if p.Y < r.Min.Y {
+			p.Y = r.Min.Y
+		} else if p.Y > r.Max.Y {
+			p.Y = r.Max.Y
+		}
+		return p
+	}
+	return [4]image.Point{clamp(pts[0]), clamp(pts[1]), clamp(pts[2]), clamp(pts[3])}
 }
 
 // axisAlignedQuad returns the axis-aligned bounding rect of pts as 4 corners
