@@ -7,7 +7,7 @@ import (
 )
 
 func main() {
-	a := app.New()
+	a := app.NewWithID("net.nebupookins.quire")
 	mw := ui.NewMainWindow(a)
 	mw.Show()
 }
