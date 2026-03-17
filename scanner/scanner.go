@@ -3,6 +3,7 @@ package scanner
 import (
 	"bufio"
 	"bytes"
+	"context"
 	"errors"
 	"fmt"
 	"image"
@@ -124,13 +125,18 @@ func QueryOptions(device string) (DeviceOptions, error) {
 
 // Scan acquires an image from the given device.
 // On non-zero exit or any stderr output, an error is returned wrapping the stderr text.
-func Scan(device string, mode Mode, resolution int) (image.Image, error) {
+//
+// progress is an optional callback invoked with values in [0, 1] as scan data arrives.
+// Pass nil if progress reporting is not needed.
+// When non-nil, the future implementation will pass --progress to scanimage and parse
+// its stderr output; the callback will be invoked on the caller's goroutine.
+func Scan(ctx context.Context, device string, mode Mode, resolution int, progress func(float64)) (image.Image, error) {
 	bin, err := exec.LookPath("scanimage")
 	if err != nil {
 		return nil, ErrScanImageNotFound
 	}
 	var stdout, stderr bytes.Buffer
-	cmd := exec.Command(bin,
+	cmd := exec.CommandContext(ctx, bin,
 		"--device", device,
 		"--format=pnm",
 		"--mode", string(mode),

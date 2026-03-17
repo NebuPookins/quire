@@ -232,7 +232,27 @@ This is the most complex piece. Build it incrementally:
 
 ---
 
-## Step 10 — Build Verification
+## Step 10 — Scan Progress Reporting (future)
+
+`Scan` already accepts `ctx context.Context` and a `progress func(float64)` callback
+(nil = no-op). When this step is implemented, fill in the callback path:
+
+1. Add `--progress` to the scanimage arguments when `progress != nil`.
+2. Instead of buffering stderr, attach a pipe and read it line by line in a goroutine.
+   - scanimage writes lines like `Progress: 42%` to stderr when `--progress` is given.
+   - Parse the percentage and invoke `progress(pct / 100.0)` on each such line.
+   - Collect any non-progress stderr text; treat it as an error at the end (existing
+     behaviour unchanged for callers passing `nil`).
+3. `cmd.Cancel` (set via `exec.CommandContext`) already handles cancellation via the
+   passed `ctx`; no additional wiring needed.
+4. In `ui/mainwindow.go`, pass a `progress` func that posts to a Fyne progress bar
+   (or updates the spinner label) via `fyne.Do(...)`.
+5. Add a unit test that feeds fake `Progress: N%` lines through `parseProgress` (new
+   unexported helper) and asserts the correct float values.
+
+---
+
+## Step 11 — Build Verification
 
 - `go build ./...` must produce zero errors and zero warnings.
 - `go vet ./...` must pass.
@@ -262,4 +282,5 @@ This is the most complex piece. Build it incrementally:
 | 7 | `ui/cropoverlay.go` | Custom widget (image, handles, loupe) |
 | 8 | `ui/mainwindow.go` | Save handler wired to export + config |
 | 9 | All | Polish, error paths, thread-safety audit |
-| 10 | — | Build + smoke test |
+| 10 | `scanner/scanner.go`, `ui/mainwindow.go` | Scan progress reporting |
+| 11 | — | Build + smoke test |
