@@ -1,8 +1,20 @@
 package ui
 
 import (
+	"context"
+	"errors"
+	"fmt"
+	"image"
+	"strconv"
+
 	"fyne.io/fyne/v2"
+	"fyne.io/fyne/v2/container"
+	"fyne.io/fyne/v2/dialog"
 	"fyne.io/fyne/v2/widget"
+
+	"quire/config"
+	"quire/detect"
+	"quire/scanner"
 )
 
 // AppState represents the top-level application state.
@@ -21,6 +33,12 @@ type MainWindow struct {
 	app    fyne.App
 	state  AppState
 
+	scannedImage   image.Image
+	detectedQuad   [4]image.Point
+	cfg            config.Config
+	devices        []scanner.Device
+	selectedDevice scanner.Device
+
 	scanBtn     *widget.Button
 	saveBtn     *widget.Button
 	resetBtn    *widget.Button
@@ -28,15 +46,254 @@ type MainWindow struct {
 	deviceSel   *widget.Select
 	resSel      *widget.Select
 	modeSel     *widget.Select
+	spinner     *widget.Activity
 	cropOverlay *CropOverlay
 }
 
-// NewMainWindow constructs and returns the main application window.
+// NewMainWindow constructs the main application window and starts scanner
+// discovery. Call Show() to display the window and enter the Fyne event loop.
 func NewMainWindow(a fyne.App) *MainWindow {
-	panic("not implemented")
+	mw := &MainWindow{app: a, cfg: config.Load()}
+	mw.window = a.NewWindow("Quire")
+
+	mw.scanBtn = widget.NewButton("Scan", mw.onScan)
+	mw.saveBtn = widget.NewButton("Save", mw.onSave)
+	mw.resetBtn = widget.NewButton("Reset Crop", mw.onResetCrop)
+	mw.freeQuadChk = widget.NewCheck("Free quad", mw.onFreeQuadToggle)
+	mw.deviceSel = widget.NewSelect(nil, mw.onDeviceSelected)
+	mw.resSel = widget.NewSelect(nil, nil)
+	mw.modeSel = widget.NewSelect(nil, nil)
+	mw.spinner = widget.NewActivity()
+	mw.cropOverlay = NewCropOverlay()
+
+	mw.setState(StateIdle)
+	mw.spinner.Hide()
+
+	toolbar := container.NewHBox(mw.deviceSel, mw.resSel, mw.modeSel)
+	leftBar := container.NewHBox(mw.resetBtn, mw.freeQuadChk)
+	rightBar := container.NewHBox(mw.spinner, mw.scanBtn, mw.saveBtn)
+	bottomBar := container.NewBorder(nil, nil, leftBar, rightBar)
+	content := container.NewBorder(toolbar, bottomBar, nil, nil, mw.cropOverlay)
+
+	mw.window.SetContent(content)
+	mw.window.Resize(fyne.NewSize(800, 600))
+
+	go mw.discoverDevices()
+
+	return mw
 }
 
-// setState enables/disables UI controls according to the F7 state table.
+// Show displays the window and enters the Fyne event loop. It blocks until
+// the window is closed.
+func (mw *MainWindow) Show() {
+	mw.window.ShowAndRun()
+}
+
+// setState enables/disables UI controls per the F7 state table.
+// Safe to call from the UI goroutine; use fyne.Do when calling from other goroutines.
 func (mw *MainWindow) setState(s AppState) {
-	panic("not implemented")
+	mw.state = s
+	switch s {
+	case StateIdle:
+		if mw.selectedDevice.Name != "" {
+			mw.scanBtn.Enable()
+		} else {
+			mw.scanBtn.Disable()
+		}
+		mw.saveBtn.Disable()
+		mw.resetBtn.Disable()
+		mw.freeQuadChk.Disable()
+	case StateScanning:
+		mw.scanBtn.Disable()
+		mw.saveBtn.Disable()
+		mw.resetBtn.Disable()
+		mw.freeQuadChk.Disable()
+	case StateReady:
+		mw.scanBtn.Enable()
+		mw.saveBtn.Enable()
+		mw.resetBtn.Enable()
+		mw.freeQuadChk.Enable()
+	case StateSaving:
+		mw.scanBtn.Disable()
+		mw.saveBtn.Disable()
+		mw.resetBtn.Disable()
+		mw.freeQuadChk.Disable()
+	}
+}
+
+// discoverDevices runs scanimage device discovery and updates the UI.
+// Must be called in a goroutine.
+func (mw *MainWindow) discoverDevices() {
+	devices, err := scanner.ListDevices()
+	fyne.Do(func() {
+		if err != nil {
+			if errors.Is(err, scanner.ErrScanImageNotFound) {
+				dialog.ShowError(fmt.Errorf("scanimage not found on PATH — install SANE to use Quire"), mw.window)
+			} else {
+				dialog.ShowError(fmt.Errorf("scanner discovery failed: %w", err), mw.window)
+			}
+			return
+		}
+		if len(devices) == 0 {
+			dialog.ShowInformation("No scanners found",
+				"No scanners were detected by SANE.\nConnect a scanner and restart.", mw.window)
+			return
+		}
+		mw.devices = devices
+		descs := make([]string, len(devices))
+		for i, d := range devices {
+			descs[i] = d.Description
+		}
+		mw.deviceSel.Options = descs
+		mw.deviceSel.Refresh()
+		if len(devices) == 1 {
+			mw.deviceSel.SetSelected(descs[0])
+			// onDeviceSelected fires automatically via SetSelected.
+		}
+	})
+}
+
+// onDeviceSelected is called when the user picks a device from the dropdown.
+func (mw *MainWindow) onDeviceSelected(desc string) {
+	for _, d := range mw.devices {
+		if d.Description == desc {
+			mw.selectedDevice = d
+			break
+		}
+	}
+	go mw.queryDeviceOptions()
+}
+
+// queryDeviceOptions fetches the mode/resolution options for the selected device.
+// Must be called in a goroutine.
+func (mw *MainWindow) queryDeviceOptions() {
+	opts, err := scanner.QueryOptions(mw.selectedDevice.Name)
+	fyne.Do(func() {
+		if err != nil {
+			dialog.ShowError(fmt.Errorf("failed to query device options: %w", err), mw.window)
+			return
+		}
+
+		resStrs := make([]string, len(opts.Resolutions))
+		for i, r := range opts.Resolutions {
+			resStrs[i] = strconv.Itoa(r)
+		}
+		mw.resSel.Options = resStrs
+		mw.resSel.SetSelected(preferredOption(resStrs, "300"))
+		mw.resSel.Refresh()
+
+		modeStrs := make([]string, len(opts.Modes))
+		for i, m := range opts.Modes {
+			modeStrs[i] = string(m)
+		}
+		mw.modeSel.Options = modeStrs
+		mw.modeSel.SetSelected(preferredOption(modeStrs, "Color"))
+		mw.modeSel.Refresh()
+
+		mw.setState(mw.state) // re-evaluates scanBtn based on selectedDevice
+	})
+}
+
+// onScan handles the Scan button. Runs the scan in a goroutine.
+func (mw *MainWindow) onScan() {
+	mw.setState(StateScanning)
+	mw.spinner.Show()
+	mw.spinner.Start()
+
+	dev := mw.selectedDevice
+	mode := scanner.Mode(mw.modeSel.Selected)
+	res, err := strconv.Atoi(mw.resSel.Selected)
+	if err != nil {
+		res = 300
+	}
+
+	go func() {
+		img, scanErr := scanner.Scan(context.Background(), dev.Name, mode, res, nil)
+		fyne.Do(func() {
+			mw.spinner.Stop()
+			mw.spinner.Hide()
+			if scanErr != nil {
+				dialog.ShowError(fmt.Errorf("scan failed: %w", scanErr), mw.window)
+				mw.setState(StateIdle)
+				return
+			}
+			mw.scannedImage = img
+			mw.detectedQuad = detect.DetectQuad(img)
+			quad := mw.detectedQuad
+			if !mw.freeQuadChk.Checked {
+				quad = axisAlignedQuad(mw.detectedQuad)
+			}
+			mw.cropOverlay.SetImage(img)
+			mw.cropOverlay.SetCrop(quad, mw.freeQuadChk.Checked)
+			mw.setState(StateReady)
+		})
+	}()
+}
+
+// onSave handles the Save button. Full implementation in Step 8.
+func (mw *MainWindow) onSave() {
+	// Step 8
+}
+
+// onResetCrop restores the crop box to the auto-detected quad.
+func (mw *MainWindow) onResetCrop() {
+	if mw.freeQuadChk.Checked {
+		mw.cropOverlay.SetCrop(mw.detectedQuad, true)
+	} else {
+		mw.cropOverlay.SetCrop(axisAlignedQuad(mw.detectedQuad), false)
+	}
+}
+
+// onFreeQuadToggle handles the Free quad checkbox.
+func (mw *MainWindow) onFreeQuadToggle(checked bool) {
+	if mw.scannedImage == nil {
+		return
+	}
+	pts := mw.cropOverlay.CurrentCrop()
+	if checked {
+		mw.cropOverlay.SetCrop(pts, true)
+	} else {
+		mw.cropOverlay.SetCrop(axisAlignedQuad(pts), false)
+	}
+}
+
+// axisAlignedQuad returns the axis-aligned bounding rect of pts as 4 corners
+// ordered TL, TR, BR, BL.
+func axisAlignedQuad(pts [4]image.Point) [4]image.Point {
+	minX, minY := pts[0].X, pts[0].Y
+	maxX, maxY := pts[0].X, pts[0].Y
+	for _, p := range pts[1:] {
+		if p.X < minX {
+			minX = p.X
+		}
+		if p.Y < minY {
+			minY = p.Y
+		}
+		if p.X > maxX {
+			maxX = p.X
+		}
+		if p.Y > maxY {
+			maxY = p.Y
+		}
+	}
+	return [4]image.Point{
+		{X: minX, Y: minY},
+		{X: maxX, Y: minY},
+		{X: maxX, Y: maxY},
+		{X: minX, Y: maxY},
+	}
+}
+
+// preferredOption returns target if it appears in options, otherwise options[0].
+// Returns "" if options is empty.
+func preferredOption(options []string, target string) string {
+	for _, o := range options {
+		if o == target {
+			return o
+		}
+	}
+	if len(options) > 0 {
+		return options[0]
+	}
+	return ""
 }

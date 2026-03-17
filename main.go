@@ -1,16 +1,13 @@
 package main
 
 import (
-	"fyne.io/fyne/v2"
 	"fyne.io/fyne/v2/app"
-	"fyne.io/fyne/v2/container"
-	"fyne.io/fyne/v2/widget"
+
+	"quire/ui"
 )
 
 func main() {
 	a := app.New()
-	w := a.NewWindow("Quire")
-	w.SetContent(container.NewCenter(widget.NewLabel("Press Scan to begin.")))
-	w.Resize(fyne.NewSize(800, 600))
-	w.ShowAndRun()
+	mw := ui.NewMainWindow(a)
+	mw.Show()
 }

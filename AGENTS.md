@@ -86,58 +86,32 @@ Files: `export/jpeg.go`, `export/cgo_flags.go`, `export/jpeg_test.go`
 
 ---
 
-## Step 6 — App State & Main Window Skeleton (`ui/mainwindow.go`)
+## Step 6 — App State & Main Window Skeleton ✅ DONE
 
-Define the central state struct (no global variables):
+Files: `ui/mainwindow.go`, `ui/cropoverlay.go` (minimal renderer), `main.go`
 
-```go
-type AppState int
-const (
-    StateIdle AppState = iota
-    StateScanning
-    StateReady
-    StateSaving
-)
-
-type MainWindow struct {
-    window       fyne.Window
-    app          fyne.App
-    state        AppState
-    scannedImage image.Image
-    detectedQuad [4]image.Point
-    config       config.Config
-    // UI widgets stored as fields so setState can toggle them
-    scanBtn      *widget.Button
-    saveBtn      *widget.Button
-    resetBtn     *widget.Button
-    freeQuadChk  *widget.Check
-    deviceSelect *widget.Select
-    resSelect    *widget.Select
-    modeSelect   *widget.Select
-    cropOverlay  *CropOverlay  // defined in Step 7
-}
-```
-
-- `NewMainWindow(a fyne.App) *MainWindow` — constructs the window, builds the toolbar
-  and bottom bar (with placeholder widgets), sets min size 800×600.
-- `setState(s AppState)` — enables/disables buttons per the F7 state table. Must run
-  on the Fyne main thread (called from UI handlers, safe; if called from goroutines use
-  `fyne.Do()`).
-- Wire up scanner discovery on startup:
-  - Run `scanner.ListDevices()`.
-  - Zero devices → error dialog, Scan button disabled.
-  - One device → auto-select.
-  - Many devices → populate `deviceSelect` dropdown.
-  - `scanimage` not found → error dialog, Scan button disabled.
-- Wire up the **Scan** button handler (goroutine):
-  1. `setState(StateScanning)`, show progress indicator.
-  2. Call `scanner.Scan(...)`.
-  3. On error: `fyne.Do(func(){ error dialog; setState(StateIdle) })`.
-  4. On success: `fyne.Do(func(){ store image; run DetectQuad; store detectedQuad;
-     update CropOverlay; setState(StateReady) })`.
-- Wire up the **Save** button handler (Step 8 fills in export logic).
-- Wire up the **Reset Crop** button handler: restore crop to `detectedQuad` (or its
-  axis-aligned bounding rect per current mode).
+- Full `MainWindow` struct with `scannedImage`, `detectedQuad`, `cfg`, `devices`,
+  `selectedDevice`, all widget fields, and a `*widget.Activity` spinner.
+- `NewMainWindow` builds the toolbar (device/res/mode selects), bottom bar
+  (Reset Crop + Free quad on left; spinner + Scan + Save on right), and
+  `container.NewBorder` layout. Starts `discoverDevices` goroutine.
+- `Show()` calls `window.ShowAndRun()`.
+- `setState` implements the F7 table; in `StateIdle`, `scanBtn` is only enabled
+  when a device is actually selected.
+- `discoverDevices` → `fyne.Do`: populates device dropdown, auto-selects if one
+  device, shows error dialog if none or `scanimage` missing.
+- `onDeviceSelected` → `queryDeviceOptions` goroutine → `fyne.Do`: populates
+  mode and resolution dropdowns from `scanner.QueryOptions`; defaults to "Color"
+  and "300" when available.
+- `onScan` goroutine: `setState(StateScanning)`, spinner start/show, calls
+  `scanner.Scan`, on success stores image, runs `detect.DetectQuad`, updates
+  `CropOverlay`, `setState(StateReady)`.
+- `onResetCrop` and `onFreeQuadToggle` implemented; `onSave` is a stub for Step 8.
+- `axisAlignedQuad` and `preferredOption` helpers in `mainwindow.go`.
+- `CropOverlay.CreateRenderer` is a minimal placeholder (centered label); replaced
+  in Step 7.
+- `main.go` updated to use `NewMainWindow`.
+- `go build ./...` and `go vet ./...` both pass.
 
 ---
 
@@ -274,7 +248,7 @@ This is the most complex piece. Build it incrementally:
 | 3 ✅ | `scanner/scanner.go` | Device list, scan subprocess |
 | 4 ✅ | `detect/edges.go` | OpenCV quad detection |
 | 5 ✅ | `export/jpeg.go` | Axis-aligned + perspective JPEG export |
-| 6 | `ui/mainwindow.go` | State machine, toolbar, button wiring |
+| 6 ✅ | `ui/mainwindow.go` | State machine, toolbar, button wiring |
 | 7 | `ui/cropoverlay.go` | Custom widget (image, handles, loupe) |
 | 8 | `ui/mainwindow.go` | Save handler wired to export + config |
 | 9 | All | Polish, error paths, thread-safety audit |

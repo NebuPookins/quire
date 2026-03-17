@@ -9,6 +9,7 @@ import (
 
 // CropOverlay is a custom Fyne widget that displays the scanned image with
 // a draggable crop box and an optional loupe overlay.
+// The full rendering and interaction implementation is in Step 7.
 type CropOverlay struct {
 	widget.BaseWidget
 
@@ -24,13 +25,13 @@ func NewCropOverlay() *CropOverlay {
 	return w
 }
 
-// SetImage updates the displayed image and resets the crop to the full bounds.
+// SetImage updates the displayed image and triggers a refresh.
 func (c *CropOverlay) SetImage(img image.Image) {
 	c.img = img
 	c.Refresh()
 }
 
-// SetCrop updates the crop quad (in image coordinates).
+// SetCrop updates the crop quad (in image coordinates) and triggers a refresh.
 func (c *CropOverlay) SetCrop(pts [4]image.Point, freeQuad bool) {
 	c.cropPts = pts
 	c.freeQuad = freeQuad
@@ -43,7 +44,15 @@ func (c *CropOverlay) SetFreeQuad(fq bool) {
 	c.Refresh()
 }
 
+// CurrentCrop returns the current crop quad in image coordinates.
+func (c *CropOverlay) CurrentCrop() [4]image.Point {
+	return c.cropPts
+}
+
 // CreateRenderer implements fyne.Widget.
+// This is a minimal placeholder; the full implementation is in Step 7.
 func (c *CropOverlay) CreateRenderer() fyne.WidgetRenderer {
-	panic("not implemented")
+	label := widget.NewLabel("Press Scan to begin.")
+	label.Alignment = fyne.TextAlignCenter
+	return widget.NewSimpleRenderer(label)
 }
