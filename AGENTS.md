@@ -115,57 +115,34 @@ Files: `ui/mainwindow.go`, `ui/cropoverlay.go` (minimal renderer), `main.go`
 
 ---
 
-## Step 7 — CropOverlay Widget (`ui/cropoverlay.go`)
+## Step 7 — CropOverlay Widget (`ui/cropoverlay.go`) ✅ DONE
 
-This is the most complex piece. Build it incrementally:
+Files: `ui/cropoverlay.go`
 
-### 7a — Basic image display
-- `CropOverlay` embeds `widget.BaseWidget`.
-- `Renderer` draws the scanned image scaled to fit (letterboxed, aspect-ratio preserved).
-- Before a scan: render placeholder text "Press Scan to begin."
-- Expose `SetImage(img image.Image)` to update and `Refresh()`.
-
-### 7b — Crop box rendering
-- Internal state: `cropPts [4]image.Point` in image coordinates; `freeQuad bool`.
-- `SetCrop(pts [4]image.Point, freeQuad bool)` — update state + Refresh.
-- Renderer draws:
-  - Dark semi-transparent fill outside crop region.
-  - White 2px border around crop region.
-  - Handles: 12×12 px white squares with dark border.
-    - Axis-aligned: 8 handles (4 corners + 4 edge midpoints).
-    - Free quad: 4 corner handles.
-- Coordinate helpers: `imageToDisplay(p image.Point) fyne.Position` and
-  `displayToImage(p fyne.Position) image.Point` using the current letterbox
-  scale + offset.
-
-### 7c — Mouse interaction
-- Implement `desktop.Mouseable` (`MouseDown`, `MouseUp`, `MouseMoved`) and
-  `desktop.Hoverable` (`MouseIn`, `MouseOut`, `MouseMoved`).
-- `MouseDown`: hit-test handles (24×24 px hit target), set `activeHandle` index.
-- `MouseMoved` while dragging:
-  - Update the relevant `cropPts` entry (or two for edge-midpoint handles).
-  - Enforce minimum 20px width/height in display coordinates.
-  - Axis-aligned: after updating a corner, re-derive the other three from the
-    min/max of all four to keep rect aligned.
-  - Call `Refresh()`.
-- `MouseUp`: clear `activeHandle`, clear loupe, `Refresh()`.
-
-### 7d — Loupe overlay
-- While `activeHandle >= 0`, composite a 200×200 loupe into the widget's draw pass.
-- Source region: `LoupeSourceSize × LoupeSourceSize` pixels from the full-resolution
-  image centered on the active handle's image-coordinate position. Clamp to image bounds.
-- Scale that region up to 200×200.
-- Draw a crosshair in the center.
-- Position loupe in the farthest corner from the active handle (compare handle's
-  display position to widget center).
-- Use `canvas.Raster` or paint via `canvas.NewRasterWithPixels` — no separate OS window.
-
-### 7e — Free quad toggle
-- `SetFreeQuad(fq bool)` — called by the bottom-bar checkbox.
-- On `false → true`: convert current rect's two stored points into 4 explicit corners,
-  no visual change.
-- On `true → false`: snap current quad to its axis-aligned bounding rect.
-- Update renderer handle set accordingly.
+- `CropOverlay` embeds `widget.BaseWidget`; compile-time interface checks for
+  `desktop.Mouseable` and `desktop.Hoverable`.
+- `CreateRenderer` returns a `cropRenderer` holding a `canvas.Raster` (pixel generator)
+  and a `canvas.Text` placeholder shown only when no image is loaded.
+- `letterbox(dispW, dispH, img)` — scale + offset for aspect-ratio-preserving fit.
+- `imgToDisp` / `dispToImg` — convert between image and display coordinate spaces.
+- `generate(w, h int) image.Image` — full pixel-level renderer:
+  - Nearest-neighbour scaled image into the letterbox rect.
+  - `applyDimOverlay`: axis-aligned fast path (4 dim rects); free-quad path uses
+    `pointInQuad` (cross-product convex test, clockwise winding) per pixel within
+    the image area only.
+  - White 2px crop border via Bresenham `drawThickLine`.
+  - 12×12 white handle squares with dark border (8 handles for axis-aligned,
+    4 for free quad).
+  - Loupe: 200×200 nearest-neighbour zoom of a 40×40 source region centred on the
+    active handle; placed in the farthest corner; white crosshair drawn at centre.
+- `handlePositions(scale, offX, offY)` — returns 8 or 4 fyne.Position values
+  (corners + edge midpoints for axis-aligned; corners only for free quad).
+- `hitTestHandle(pos)` — 24×24 pt hit target per handle; uses `widgetSize` (points).
+- `applyDrag(pos)` — updates `cropPts` for the active handle; axis-aligned mode
+  re-derives all four corners from updated min/max; enforces 20 display-unit minimum
+  crop size; free-quad mode moves the corner directly.
+- `MouseDown/Up/In/Out/Moved` wired to hit-test and drag.
+- `go build ./...` and `go vet ./...` both pass.
 
 ---
 
@@ -249,7 +226,7 @@ This is the most complex piece. Build it incrementally:
 | 4 ✅ | `detect/edges.go` | OpenCV quad detection |
 | 5 ✅ | `export/jpeg.go` | Axis-aligned + perspective JPEG export |
 | 6 ✅ | `ui/mainwindow.go` | State machine, toolbar, button wiring |
-| 7 | `ui/cropoverlay.go` | Custom widget (image, handles, loupe) |
+| 7 ✅ | `ui/cropoverlay.go` | Custom widget (image, handles, loupe) |
 | 8 | `ui/mainwindow.go` | Save handler wired to export + config |
 | 9 | All | Polish, error paths, thread-safety audit |
 | 10 | `scanner/scanner.go`, `ui/mainwindow.go` | Scan progress reporting |
