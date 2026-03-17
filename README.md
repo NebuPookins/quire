@@ -1,15 +1,14 @@
 # Quire
 
 A desktop document scanning application for Arch Linux. Acquire an image from your
-scanner, auto-detect document edges, adjust the crop box interactively, and export
-a JPEG.
+scanner, adjust the crop box interactively, and export a JPEG.
 
 ## Prerequisites
 
 Install system dependencies:
 
 ```sh
-sudo pacman -S sane opencv
+sudo pacman -S sane
 ```
 
 Verify your scanner is recognised by SANE:
@@ -39,12 +38,12 @@ go build -o quire .
 2. Choose **Resolution** (75 / 150 / 300 / 600 dpi, default 300) and **Mode**
    (Color / Gray / Lineart, default Color).
 3. Click **Scan**. A progress indicator is shown while scanning. The scanned image
-   appears with an auto-detected crop box when done.
+   appears with the crop box set to the full image (or the previous scan's crop if one exists).
 4. Adjust the crop box by dragging the handles. A loupe (magnified view) appears
    near each handle while dragging.
 5. Toggle **Free quad** in the bottom bar to switch between an axis-aligned rectangle
    and a free four-corner quadrilateral (useful for perspective correction).
-6. Click **Reset Crop** to restore the auto-detected crop.
+6. Click **Reset Crop** to restore the crop to the full image bounds.
 7. Click **Save** to export the cropped region as a JPEG (quality 92). The file
    dialog opens in the last-used save directory, which is persisted across sessions.
 
@@ -65,6 +64,6 @@ do not need to edit it manually.
 | Concern | Library |
 |---------|---------|
 | UI | [Fyne v2](https://fyne.io) |
-| Image / CV | [GoCV](https://gocv.io) (OpenCV bindings) |
+| Image | Go stdlib (`image`, `image/draw`) |
 | Scanner | `scanimage` (SANE CLI) |
 | Output | JPEG via Go stdlib |
