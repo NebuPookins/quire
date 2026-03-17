@@ -9,6 +9,7 @@ import (
 // Config holds the persisted application configuration.
 type Config struct {
 	LastSaveDir string `json:"last_save_dir"`
+	LastDevice  string `json:"last_device,omitempty"` // SANE device name, e.g. "pixma:04A91234"
 }
 
 // configPath returns the path to the config file, respecting XDG_CONFIG_HOME.

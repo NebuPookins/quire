@@ -163,8 +163,19 @@ func (mw *MainWindow) discoverDevices() {
 		}
 		mw.deviceSel.Options = descs
 		mw.deviceSel.Refresh()
-		if len(devices) == 1 {
-			mw.deviceSel.SetSelected(descs[0])
+		// Auto-select: prefer the last-used device, fall back to the only device.
+		autoSelect := ""
+		for _, d := range devices {
+			if d.Name == mw.cfg.LastDevice {
+				autoSelect = d.Description
+				break
+			}
+		}
+		if autoSelect == "" && len(devices) == 1 {
+			autoSelect = descs[0]
+		}
+		if autoSelect != "" {
+			mw.deviceSel.SetSelected(autoSelect)
 			// onDeviceSelected fires automatically via SetSelected.
 		}
 	})
@@ -178,6 +189,8 @@ func (mw *MainWindow) onDeviceSelected(desc string) {
 			break
 		}
 	}
+	mw.cfg.LastDevice = mw.selectedDevice.Name
+	config.Save(mw.cfg) //nolint:errcheck — non-critical
 	go mw.queryDeviceOptions()
 }
 
