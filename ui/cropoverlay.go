@@ -3,6 +3,7 @@ package ui
 import (
 	"image"
 	"image/color"
+	"image/draw"
 
 	"fyne.io/fyne/v2"
 	"fyne.io/fyne/v2/canvas"
@@ -17,6 +18,9 @@ const (
 	loupeSrcSize = 40  // loupe source region in image px
 	minCropDisp  = 20  // minimum crop dimension in display units
 )
+
+// dimColor is the semi-transparent black used to darken the area outside the crop.
+var dimColor = image.NewUniform(color.RGBA{A: 165})
 
 // CropOverlay is a custom Fyne widget that displays the scanned image with
 // a draggable crop box and an optional loupe overlay.
@@ -67,10 +71,24 @@ func (c *CropOverlay) CurrentCrop() [4]image.Point {
 
 // CreateRenderer implements fyne.Widget.
 func (c *CropOverlay) CreateRenderer() fyne.WidgetRenderer {
-	r := canvas.NewRaster(c.generate)
-	t := canvas.NewText("Press Scan to begin.", color.RGBA{R: 180, G: 180, B: 180, A: 255})
-	t.Alignment = fyne.TextAlignCenter
-	return &cropRenderer{overlay: c, raster: r, placeholder: t}
+	// bgImage renders the scanned image GPU-accelerated via Fyne's renderer.
+	bgImage := canvas.NewImageFromImage(image.NewRGBA(image.Rect(0, 0, 1, 1)))
+	bgImage.FillMode = canvas.ImageFillContain
+	bgImage.ScaleMode = canvas.ImageScaleFastest
+	bgImage.Hide()
+
+	// raster draws the overlay: dim regions, crop border, handles, loupe.
+	raster := canvas.NewRaster(c.generateOverlay)
+
+	placeholder := canvas.NewText("Press Scan to begin.", color.RGBA{R: 180, G: 180, B: 180, A: 255})
+	placeholder.Alignment = fyne.TextAlignCenter
+
+	return &cropRenderer{
+		overlay:     c,
+		bgImage:     bgImage,
+		raster:      raster,
+		placeholder: placeholder,
+	}
 }
 
 // MouseDown implements desktop.Mouseable.
@@ -253,16 +271,16 @@ func clampInt(v, lo, hi int) int {
 	return v
 }
 
-// --- raster generator ---
+// --- overlay raster generator ---
 
-// generate is called by canvas.Raster to produce the display image at physical
-// pixel resolution w×h. It renders: letterboxed scan image, dim overlay outside
-// crop, white crop border, drag handles, and the loupe when dragging.
-func (c *CropOverlay) generate(w, h int) image.Image {
+// generateOverlay produces the transparent overlay drawn on top of the bgImage:
+// dim regions, crop border, handles, and the loupe when dragging.
+// The scanned image itself is rendered by bgImage (canvas.Image, GPU-accelerated).
+func (c *CropOverlay) generateOverlay(w, h int) image.Image {
 	dst := image.NewRGBA(image.Rect(0, 0, w, h))
+	// dst starts fully transparent (all zeros).
 
 	if c.img == nil {
-		fillRect(dst, dst.Bounds(), color.RGBA{R: 30, G: 30, B: 30, A: 255})
 		return dst
 	}
 
@@ -273,34 +291,13 @@ func (c *CropOverlay) generate(w, h int) image.Image {
 	iOffX := int(offX)
 	iOffY := int(offY)
 
-	// Black letterbox background.
-	fillRect(dst, dst.Bounds(), color.RGBA{A: 255})
-
-	// Nearest-neighbour scaled image.
-	for dy := 0; dy < dispH; dy++ {
-		for dx := 0; dx < dispW; dx++ {
-			sx := imgB.Min.X + int(float32(dx)/scale)
-			sy := imgB.Min.Y + int(float32(dy)/scale)
-			if sx >= imgB.Max.X {
-				sx = imgB.Max.X - 1
-			}
-			if sy >= imgB.Max.Y {
-				sy = imgB.Max.Y - 1
-			}
-			r, g, b, a := c.img.At(sx, sy).RGBA()
-			dst.SetRGBA(iOffX+dx, iOffY+dy, color.RGBA{
-				R: uint8(r >> 8), G: uint8(g >> 8), B: uint8(b >> 8), A: uint8(a >> 8),
-			})
-		}
-	}
-
 	// Crop quad in display (physical pixel) coords.
 	var dispQuad [4]fyne.Position
 	for i := range 4 {
 		dispQuad[i] = imgToDisp(c.cropPts[i], scale, offX, offY)
 	}
 
-	// Dim area outside crop.
+	// Dim the area outside the crop region.
 	c.applyDimOverlay(dst, iOffX, iOffY, iOffX+dispW, iOffY+dispH, dispQuad)
 
 	// White 2px crop border.
@@ -329,8 +326,8 @@ func (c *CropOverlay) generate(w, h int) image.Image {
 	return dst
 }
 
-// applyDimOverlay darkens pixels outside the crop quad.
-// imgX0,imgY0,imgX1,imgY1 are the pixel bounds of the letterboxed image.
+// applyDimOverlay paints semi-transparent black over pixels outside the crop quad.
+// imgX0,imgY0,imgX1,imgY1 are the pixel bounds of the letterboxed image area.
 func (c *CropOverlay) applyDimOverlay(dst *image.RGBA, imgX0, imgY0, imgX1, imgY1 int, quad [4]fyne.Position) {
 	if !c.freeQuad {
 		// Axis-aligned fast path: four dim rectangles surrounding the crop box.
@@ -349,27 +346,16 @@ func (c *CropOverlay) applyDimOverlay(dst *image.RGBA, imgX0, imgY0, imgX1, imgY
 		for x := imgX0; x < imgX1; x++ {
 			fp := fyne.NewPos(float32(x)+0.5, float32(y)+0.5)
 			if !pointInQuad(quad, fp) {
-				px := dst.RGBAAt(x, y)
-				px.R = uint8(float32(px.R) * 0.35)
-				px.G = uint8(float32(px.G) * 0.35)
-				px.B = uint8(float32(px.B) * 0.35)
-				dst.SetRGBA(x, y, px)
+				dst.SetRGBA(x, y, color.RGBA{A: 165})
 			}
 		}
 	}
 }
 
+// dimRegion fills r with semi-transparent black using a single draw call.
 func dimRegion(dst *image.RGBA, r image.Rectangle) {
 	r = r.Intersect(dst.Bounds())
-	for y := r.Min.Y; y < r.Max.Y; y++ {
-		for x := r.Min.X; x < r.Max.X; x++ {
-			px := dst.RGBAAt(x, y)
-			px.R = uint8(float32(px.R) * 0.35)
-			px.G = uint8(float32(px.G) * 0.35)
-			px.B = uint8(float32(px.B) * 0.35)
-			dst.SetRGBA(x, y, px)
-		}
-	}
+	draw.Draw(dst, r, dimColor, image.Point{}, draw.Src)
 }
 
 // pointInQuad returns true if p is inside the convex quad (TL,TR,BR,BL, clockwise).
@@ -440,11 +426,7 @@ func (c *CropOverlay) drawLoupe(dst *image.RGBA, w, h int, handlePos fyne.Positi
 
 func fillRect(dst *image.RGBA, r image.Rectangle, c color.RGBA) {
 	r = r.Intersect(dst.Bounds())
-	for y := r.Min.Y; y < r.Max.Y; y++ {
-		for x := r.Min.X; x < r.Max.X; x++ {
-			dst.SetRGBA(x, y, c)
-		}
-	}
+	draw.Draw(dst, r, image.NewUniform(c), image.Point{}, draw.Src)
 }
 
 func drawRectBorder(dst *image.RGBA, r image.Rectangle, c color.RGBA) {
@@ -522,12 +504,14 @@ func drawLine(dst *image.RGBA, x0, y0, x1, y1 int, c color.RGBA) {
 
 type cropRenderer struct {
 	overlay     *CropOverlay
+	bgImage     *canvas.Image
 	raster      *canvas.Raster
 	placeholder *canvas.Text
 }
 
 func (r *cropRenderer) Layout(size fyne.Size) {
 	r.overlay.widgetSize = size
+	r.bgImage.Resize(size)
 	r.raster.Resize(size)
 	r.placeholder.Resize(fyne.NewSize(size.Width, 24))
 	r.placeholder.Move(fyne.NewPos(0, (size.Height-24)/2))
@@ -539,15 +523,20 @@ func (r *cropRenderer) MinSize() fyne.Size {
 
 func (r *cropRenderer) Refresh() {
 	if r.overlay.img == nil {
+		r.bgImage.Hide()
 		r.placeholder.Show()
 	} else {
+		r.bgImage.Image = r.overlay.img
+		r.bgImage.Show()
 		r.placeholder.Hide()
 	}
+	r.bgImage.Refresh()
 	r.raster.Refresh()
 }
 
 func (r *cropRenderer) Destroy() {}
 
+// Objects returns canvas objects bottom-to-top: bgImage, overlay raster, placeholder.
 func (r *cropRenderer) Objects() []fyne.CanvasObject {
-	return []fyne.CanvasObject{r.raster, r.placeholder}
+	return []fyne.CanvasObject{r.bgImage, r.raster, r.placeholder}
 }

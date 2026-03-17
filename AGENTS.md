@@ -166,35 +166,33 @@ Files: `ui/mainwindow.go`
 
 ---
 
-## Step 9 — Integration & Polish
+## Step 9 — Integration & Polish ✅ DONE
 
-- Verify the F7 state table: manually trace all transitions; write a table-driven test
-  for `setState` if feasible.
-- Ensure every goroutine that touches a Fyne widget does so via `fyne.Do()`.
-- Audit all `gocv.Mat` allocations for matching `.Close()` / `defer mat.Close()`.
-- Review error paths:
-  - `scanimage` not on PATH (startup).
-  - Scan subprocess error.
-  - OpenCV no-quad fallback (silent).
-  - File write failure.
-  - Config unreadable (silent, use defaults).
-- Confirm window resizing works: `CropOverlay` fills available space; letterbox
-  recalculates on `Resize()`.
-- Set final window title to "Quire".
-- **CropOverlay rendering performance:** the current `canvas.Raster` generator scales
-  the image and applies the dim overlay with per-pixel CPU loops, which is too slow for
-  smooth dragging at HiDPI resolutions. Replace with:
-  - A `canvas.Image` for the scanned image — Fyne uploads it as a GPU texture and
-    handles scaling via OpenGL/Metal, so the expensive scale is free at drag time.
-    Set `FillMode = canvas.ImageFillContain` for letterboxing.
-  - A thin `canvas.Raster` drawn on top for the overlay only (dim regions, crop
-    border, handles, loupe). This is much cheaper: no image scaling, just drawing
-    on a widget-sized buffer.
-  - For the dim regions in this overlay, use `image/draw` with
-    `image.NewUniform(color.NRGBA{0, 0, 0, 165})` and `draw.Over` instead of
-    per-pixel float multiplication.
-  - For the free-quad dim path, `golang.org/x/image/draw` (already available
-    transitively via Fyne) provides optimized scanline fill.
+Files: `ui/cropoverlay.go`, `ui/mainwindow_test.go`
+
+- **setState test** (`ui/mainwindow_test.go`): 5-case table-driven test using
+  `test.NewApp()` covering Idle/no-device, Idle/device, Scanning, Ready, Saving.
+  All pass (`go test ./ui/... -v`).
+- **fyne.Do() audit**: all goroutine→UI paths in `mainwindow.go` already wrapped
+  (`discoverDevices`, `queryDeviceOptions`, `onScan`, `onSave`). ✓
+- **gocv.Mat audit**: all Mat allocations in `detect/edges.go` and `export/jpeg.go`
+  have matching `defer .Close()`. ✓
+- **Error paths**: all covered — `ErrScanImageNotFound` on startup, scan subprocess
+  error, OpenCV no-quad fallback (silent), file write failure, config load failure
+  (silent defaults). ✓
+- **Window title**: already "Quire" in `NewMainWindow`. ✓
+- **CropOverlay rendering performance** (`ui/cropoverlay.go`):
+  - Replaced single all-in-one `canvas.Raster` with `canvas.Image` (bgImage) +
+    thin overlay `canvas.Raster`.
+  - `bgImage` uses `ImageFillContain` + `ImageScaleFastest` — Fyne handles image
+    scaling GPU-accelerated; no per-pixel CPU image loop at drag time.
+  - `generateOverlay` starts from a fully transparent RGBA; no image pixel copy.
+  - `dimRegion` uses a single `draw.Draw` call with `image.NewUniform` instead of
+    a per-pixel float-multiply loop.
+  - Free-quad dim path per-pixel loop simplified to a single `SetRGBA` (no sampling).
+  - `fillRect` also switched to `draw.Draw`.
+  - Renderer `Objects()` returns `[bgImage, raster, placeholder]` (bottom to top).
+- `go build ./...`, `go vet ./...`, `go test ./...` all pass.
 
 ---
 
@@ -247,6 +245,6 @@ Files: `ui/mainwindow.go`
 | 6 ✅ | `ui/mainwindow.go` | State machine, toolbar, button wiring |
 | 7 ✅ | `ui/cropoverlay.go` | Custom widget (image, handles, loupe) |
 | 8 ✅ | `ui/mainwindow.go` | Save handler wired to export + config |
-| 9 | All | Polish, error paths, thread-safety audit |
+| 9 ✅ | All | Polish, error paths, thread-safety audit |
 | 10 | `scanner/scanner.go`, `ui/mainwindow.go` | Scan progress reporting |
 | 11 | — | Build + smoke test |
