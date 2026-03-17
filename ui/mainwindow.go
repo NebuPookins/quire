@@ -5,15 +5,18 @@ import (
 	"errors"
 	"fmt"
 	"image"
+	"path/filepath"
 	"strconv"
 
 	"fyne.io/fyne/v2"
 	"fyne.io/fyne/v2/container"
 	"fyne.io/fyne/v2/dialog"
+	"fyne.io/fyne/v2/storage"
 	"fyne.io/fyne/v2/widget"
 
 	"quire/config"
 	"quire/detect"
+	"quire/export"
 	"quire/scanner"
 )
 
@@ -249,9 +252,56 @@ func (mw *MainWindow) onScan() {
 	}()
 }
 
-// onSave handles the Save button. Full implementation in Step 8.
+// onSave handles the Save button.
 func (mw *MainWindow) onSave() {
-	// Step 8
+	mw.setState(StateSaving)
+
+	d := dialog.NewFileSave(func(writer fyne.URIWriteCloser, err error) {
+		if err != nil {
+			dialog.ShowError(fmt.Errorf("file dialog error: %w", err), mw.window)
+			mw.setState(StateReady)
+			return
+		}
+		if writer == nil {
+			// User cancelled.
+			mw.setState(StateReady)
+			return
+		}
+		path := writer.URI().Path()
+		writer.Close()
+
+		img := mw.scannedImage
+		quad := mw.cropOverlay.CurrentCrop()
+		freeQuad := mw.freeQuadChk.Checked
+
+		go func() {
+			var saveErr error
+			if freeQuad {
+				saveErr = export.SavePerspective(img, quad, path)
+			} else {
+				saveErr = export.SaveAxisAligned(img, quad[0], quad[2], path)
+			}
+			fyne.Do(func() {
+				if saveErr != nil {
+					dialog.ShowError(fmt.Errorf("save failed: %w", saveErr), mw.window)
+					mw.setState(StateReady)
+					return
+				}
+				mw.cfg.LastSaveDir = filepath.Dir(path)
+				config.Save(mw.cfg) //nolint:errcheck — non-critical
+				mw.app.SendNotification(fyne.NewNotification("Quire", "Saved "+path))
+				mw.setState(StateReady)
+			})
+		}()
+	}, mw.window)
+
+	d.SetFileName("scan.jpg")
+	if mw.cfg.LastSaveDir != "" {
+		if loc, err := storage.ListerForURI(storage.NewFileURI(mw.cfg.LastSaveDir)); err == nil {
+			d.SetLocation(loc)
+		}
+	}
+	d.Show()
 }
 
 // onResetCrop restores the crop box to the auto-detected quad.

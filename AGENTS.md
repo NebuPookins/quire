@@ -146,18 +146,23 @@ Files: `ui/cropoverlay.go`
 
 ---
 
-## Step 8 — Save Handler (complete `ui/mainwindow.go`)
+## Step 8 — Save Handler (complete `ui/mainwindow.go`) ✅ DONE
 
-- **Save** button: `setState(StateSaving)`, open `dialog.ShowFileSave`.
-  - Initial directory: `cfg.LastSaveDir`.
-  - Default filename: `scan.jpg`.
-  - On user confirmation:
-    1. Goroutine: call `export.SaveAxisAligned` or `export.SavePerspective` based on
-       current mode.
-    2. `fyne.Do`: on success → update `cfg.LastSaveDir`, call `config.Save`, show
-       success notification, `setState(StateReady)`.
-    3. `fyne.Do`: on error → error dialog, `setState(StateReady)`.
-  - On dialog cancel: `setState(StateReady)`.
+Files: `ui/mainwindow.go`
+
+- `onSave`: `setState(StateSaving)`, creates `dialog.NewFileSave` with callback.
+  - Sets default filename `scan.jpg` and initial location from `cfg.LastSaveDir`
+    (via `storage.NewFileURI` + `storage.ListerForURI`; silently skipped if unset
+    or invalid).
+  - On cancel (writer == nil): `setState(StateReady)`.
+  - On confirmation: closes writer immediately (path extracted via `writer.URI().Path()`),
+    launches goroutine calling `export.SavePerspective` (free-quad mode) or
+    `export.SaveAxisAligned` (axis-aligned, using `cropPts[0]` and `cropPts[2]`).
+  - `fyne.Do` on success: updates `cfg.LastSaveDir` (`filepath.Dir(path)`), calls
+    `config.Save`, sends OS notification via `app.SendNotification`, `setState(StateReady)`.
+  - `fyne.Do` on error: error dialog, `setState(StateReady)`.
+- Imports added: `path/filepath`, `fyne.io/fyne/v2/storage`, `quire/export`.
+- `go build ./...` and `go vet ./...` both pass.
 
 ---
 
@@ -176,6 +181,20 @@ Files: `ui/cropoverlay.go`
 - Confirm window resizing works: `CropOverlay` fills available space; letterbox
   recalculates on `Resize()`.
 - Set final window title to "Quire".
+- **CropOverlay rendering performance:** the current `canvas.Raster` generator scales
+  the image and applies the dim overlay with per-pixel CPU loops, which is too slow for
+  smooth dragging at HiDPI resolutions. Replace with:
+  - A `canvas.Image` for the scanned image — Fyne uploads it as a GPU texture and
+    handles scaling via OpenGL/Metal, so the expensive scale is free at drag time.
+    Set `FillMode = canvas.ImageFillContain` for letterboxing.
+  - A thin `canvas.Raster` drawn on top for the overlay only (dim regions, crop
+    border, handles, loupe). This is much cheaper: no image scaling, just drawing
+    on a widget-sized buffer.
+  - For the dim regions in this overlay, use `image/draw` with
+    `image.NewUniform(color.NRGBA{0, 0, 0, 165})` and `draw.Over` instead of
+    per-pixel float multiplication.
+  - For the free-quad dim path, `golang.org/x/image/draw` (already available
+    transitively via Fyne) provides optimized scanline fill.
 
 ---
 
@@ -227,7 +246,7 @@ Files: `ui/cropoverlay.go`
 | 5 ✅ | `export/jpeg.go` | Axis-aligned + perspective JPEG export |
 | 6 ✅ | `ui/mainwindow.go` | State machine, toolbar, button wiring |
 | 7 ✅ | `ui/cropoverlay.go` | Custom widget (image, handles, loupe) |
-| 8 | `ui/mainwindow.go` | Save handler wired to export + config |
+| 8 ✅ | `ui/mainwindow.go` | Save handler wired to export + config |
 | 9 | All | Polish, error paths, thread-safety audit |
 | 10 | `scanner/scanner.go`, `ui/mainwindow.go` | Scan progress reporting |
 | 11 | — | Build + smoke test |
