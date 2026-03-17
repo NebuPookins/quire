@@ -53,28 +53,22 @@ Files: `scanner/scanner.go`, `scanner/scanner_test.go`
 
 ---
 
-## Step 4 — Edge Detection (`detect/edges.go`)
+## Step 4 — Edge Detection ✅ DONE
 
-- Tunable constants at top of file:
-  ```go
-  const (
-      CannyLow       = 75
-      CannyHigh      = 200
-      LoupeSourceSize = 40
-  )
-  ```
-- `DetectQuad(img image.Image) [4]image.Point` — implements the pipeline:
-  1. Convert `image.Image` → `gocv.Mat` (RGBA→BGR).
-  2. Grayscale → Gaussian blur (5×5) → Canny.
-  3. `FindContours` (external only).
-  4. For each contour: convex hull → `ApproxPolyDP` (ε = 0.02 × arc length).
-  5. Keep 4-vertex polygons; pick the largest by area.
-  6. Fallback: full image bounding rect.
-  7. Order corners: top-left, top-right, bottom-right, bottom-left.
-  8. Return as `[4]image.Point`.
-  - `defer mat.Close()` at every `gocv.Mat` allocation.
-- Unit-test with a synthetic white rectangle on black background — detection should
-  return approximately the rectangle corners.
+Files: `detect/edges.go`, `detect/cgo_flags.go`, `detect/edges_test.go`
+
+- `DetectQuad` pipeline: `ImageToMatRGB` → grayscale → Gaussian blur (5×5) → Canny
+  → `FindContours` (external) → per-contour: convex hull (index approach) →
+  `ApproxPolyDP` (ε = 2% arc length) → pick largest 4-vertex polygon → `orderQuad`.
+  Falls back to full image bounding rect if no quad is found.
+- `processContour` is a helper function (uses function-scoped defers) to avoid the
+  defer-in-loop problem.
+- `orderQuad` sorts by Y then X to produce TL, TR, BR, BL order.
+- `detect/cgo_flags.go` adds `-Wl,--as-needed` to prevent `libopencv_viz` (and its
+  uninstalled VTK dependency) from being linked on this system.
+- 4 unit tests, all passing (`go test ./detect/... -v`).
+- Note: `gocv` API uses `RetrievalExternal` (not `RetrExternal`) and `ConvexHull`
+  returns an error in v0.43.0.
 
 ---
 
@@ -276,7 +270,7 @@ This is the most complex piece. Build it incrementally:
 | 1 ✅ | `go.mod`, stubs, `main.go` | Compiles, blank window |
 | 2 ✅ | `config/config.go` | Persist/load last-save dir |
 | 3 ✅ | `scanner/scanner.go` | Device list, scan subprocess |
-| 4 | `detect/edges.go` | OpenCV quad detection |
+| 4 ✅ | `detect/edges.go` | OpenCV quad detection |
 | 5 | `export/jpeg.go` | Axis-aligned + perspective JPEG export |
 | 6 | `ui/mainwindow.go` | State machine, toolbar, button wiring |
 | 7 | `ui/cropoverlay.go` | Custom widget (image, handles, loupe) |
