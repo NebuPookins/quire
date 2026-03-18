@@ -1,0 +1,9 @@
+[Desktop Entry]
+Type=Application
+Name=Quire
+Comment=Scan documents and export cropped JPEGs
+Exec=quire
+Icon=quire
+Categories=Graphics;Scanning;
+Keywords=scan;scanner;document;SANE;
+StartupNotify=true
