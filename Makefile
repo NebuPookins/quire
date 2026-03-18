@@ -7,7 +7,10 @@ LOGO_PNG   := build/icons/quire_app_logo.png
 
 GO_SOURCES := $(shell find . -name '*.go' -not -name 'bundled.go' -not -path './.git/*')
 
-.PHONY: all icons generate test clean
+PREFIX     := /usr
+DESTDIR    :=
+
+.PHONY: all icons generate test clean install
 
 ## all: build the binary (default target)
 all: $(BINARY)
@@ -49,6 +52,15 @@ generate: ui/bundled.go
 ## test: run all tests
 test:
 	go test ./...
+
+## install: install binary, icons, desktop file, and license into DESTDIR
+install: $(BINARY) $(ICON_PNGS)
+	install -Dm755 $(BINARY)        $(DESTDIR)$(PREFIX)/bin/$(BINARY)
+	install -Dm644 quire.desktop    $(DESTDIR)$(PREFIX)/share/applications/quire.desktop
+	install -Dm644 LICENSE          $(DESTDIR)$(PREFIX)/share/licenses/quire/LICENSE
+	$(foreach s,$(ICON_SIZES), \
+		install -Dm644 build/icons/quire_$(s).png \
+			$(DESTDIR)$(PREFIX)/share/icons/hicolor/$(s)x$(s)/apps/quire.png;)
 
 ## clean: remove the binary and all generated artifacts
 clean:
