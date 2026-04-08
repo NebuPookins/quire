@@ -11,6 +11,7 @@ PREFIX     := /usr
 DESTDIR    :=
 
 .PHONY: all icons generate test clean install
+.NOTPARALLEL:
 
 ## all: build the binary (default target)
 all: $(BINARY)
