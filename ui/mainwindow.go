@@ -141,6 +141,7 @@ func (mw *MainWindow) setState(s AppState) {
 		mw.resetBtn.Disable()
 		mw.freeQuadChk.Disable()
 	case StateScanning:
+		mw.cropOverlay.SetPlaceholder("Please wait… scanning.")
 		mw.deviceSel.Disable()
 		mw.resSel.Disable()
 		mw.modeSel.Disable()
