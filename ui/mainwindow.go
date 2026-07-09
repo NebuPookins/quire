@@ -50,6 +50,7 @@ type MainWindow struct {
 	saveBtn     *widget.Button
 	resetBtn    *widget.Button
 	freeQuadChk *widget.Check
+	invertChk   *widget.Check
 	deviceSel   *widget.Select
 	resSel      *widget.Select
 	modeSel     *widget.Select
@@ -68,6 +69,8 @@ func NewMainWindow(a fyne.App) *MainWindow {
 	mw.saveBtn = widget.NewButton("Save", mw.onSave)
 	mw.resetBtn = widget.NewButton("Reset Crop", mw.onResetCrop)
 	mw.freeQuadChk = widget.NewCheck("Free quad", mw.onFreeQuadToggle)
+	mw.invertChk = widget.NewCheck("Invert colors", mw.onInvertToggle)
+	mw.invertChk.Checked = mw.cfg.InvertColors // set directly: no image to re-invert yet
 	mw.deviceSel = widget.NewSelect(nil, mw.onDeviceSelected)
 	mw.resSel = widget.NewSelect(nil, nil)
 	mw.modeSel = widget.NewSelect(nil, nil)
@@ -79,7 +82,7 @@ func NewMainWindow(a fyne.App) *MainWindow {
 	mw.spinner.Hide()
 	mw.progressBar.Hide()
 
-	toolbar := container.NewHBox(mw.deviceSel, mw.resSel, mw.modeSel)
+	toolbar := container.NewHBox(mw.deviceSel, mw.resSel, mw.modeSel, mw.invertChk)
 	leftBar := container.NewHBox(mw.resetBtn, mw.freeQuadChk)
 	rightBar := container.NewHBox(mw.spinner, mw.progressBar, mw.scanBtn, mw.saveBtn)
 	bottomBar := container.NewBorder(nil, nil, leftBar, rightBar)
@@ -109,6 +112,7 @@ func (mw *MainWindow) setState(s AppState) {
 		mw.deviceSel.Disable()
 		mw.resSel.Hide()
 		mw.modeSel.Hide()
+		mw.invertChk.Disable()
 		mw.scanBtn.Disable()
 		mw.saveBtn.Disable()
 		mw.resetBtn.Disable()
@@ -118,6 +122,7 @@ func (mw *MainWindow) setState(s AppState) {
 		mw.deviceSel.Enable()
 		mw.resSel.Hide()
 		mw.modeSel.Hide()
+		mw.invertChk.Disable()
 		mw.scanBtn.Disable()
 		mw.saveBtn.Disable()
 		mw.resetBtn.Disable()
@@ -127,6 +132,7 @@ func (mw *MainWindow) setState(s AppState) {
 		mw.deviceSel.Disable()
 		mw.resSel.Hide()
 		mw.modeSel.Hide()
+		mw.invertChk.Disable()
 		mw.scanBtn.Disable()
 		mw.saveBtn.Disable()
 		mw.resetBtn.Disable()
@@ -136,6 +142,7 @@ func (mw *MainWindow) setState(s AppState) {
 		mw.deviceSel.Enable()
 		mw.resSel.Enable()
 		mw.modeSel.Enable()
+		mw.invertChk.Enable()
 		mw.scanBtn.Enable()
 		mw.saveBtn.Disable()
 		mw.resetBtn.Disable()
@@ -145,6 +152,7 @@ func (mw *MainWindow) setState(s AppState) {
 		mw.deviceSel.Disable()
 		mw.resSel.Disable()
 		mw.modeSel.Disable()
+		mw.invertChk.Disable()
 		mw.scanBtn.Disable()
 		mw.saveBtn.Disable()
 		mw.resetBtn.Disable()
@@ -153,6 +161,7 @@ func (mw *MainWindow) setState(s AppState) {
 		mw.deviceSel.Enable()
 		mw.resSel.Enable()
 		mw.modeSel.Enable()
+		mw.invertChk.Enable()
 		mw.scanBtn.Enable()
 		mw.saveBtn.Enable()
 		mw.resetBtn.Enable()
@@ -161,6 +170,7 @@ func (mw *MainWindow) setState(s AppState) {
 		mw.deviceSel.Disable()
 		mw.resSel.Disable()
 		mw.modeSel.Disable()
+		mw.invertChk.Disable()
 		mw.scanBtn.Disable()
 		mw.saveBtn.Disable()
 		mw.resetBtn.Disable()
@@ -313,6 +323,9 @@ func (mw *MainWindow) onScan() {
 				mw.setState(StateIdle)
 				return
 			}
+			if mw.invertChk.Checked {
+				img = invertImage(img)
+			}
 			mw.applyScanResult(img)
 		})
 	}()
@@ -405,6 +418,20 @@ func (mw *MainWindow) onResetCrop() {
 	} else {
 		mw.cropOverlay.SetCrop(axisAlignedQuad(*mw.detectedQuad), false)
 	}
+}
+
+// onInvertToggle handles the Invert colors checkbox. The setting is persisted
+// (it compensates for a per-scanner driver quirk, so it should survive
+// restarts) and any already-scanned image is re-inverted in place so the user
+// sees the effect immediately; the crop is left untouched.
+func (mw *MainWindow) onInvertToggle(bool) {
+	mw.cfg.InvertColors = mw.invertChk.Checked
+	config.Save(mw.cfg) //nolint:errcheck — non-critical
+	if mw.scannedImage == nil {
+		return
+	}
+	mw.scannedImage = invertImage(mw.scannedImage)
+	mw.cropOverlay.SetImage(mw.scannedImage)
 }
 
 // onFreeQuadToggle handles the Free quad checkbox.

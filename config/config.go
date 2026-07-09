@@ -10,6 +10,9 @@ import (
 type Config struct {
 	LastSaveDir string `json:"last_save_dir"`
 	LastDevice  string `json:"last_device,omitempty"` // SANE device name, e.g. "pixma:04A91234"
+	// InvertColors inverts scanned images, for scanner backends that emit
+	// negative output (a known quirk of some SANE drivers in Gray mode).
+	InvertColors bool `json:"invert_colors,omitempty"`
 }
 
 // configPath returns the path to the config file, respecting XDG_CONFIG_HOME.
