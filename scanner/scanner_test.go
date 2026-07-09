@@ -198,6 +198,91 @@ func TestDecodePNM_PBM_White(t *testing.T) {
 	}
 }
 
+func buildPGM16(width, height int, fill uint16) []byte {
+	var b bytes.Buffer
+	fmt.Fprintf(&b, "P5\n%d %d\n65535\n", width, height)
+	row := bytes.Repeat([]byte{byte(fill >> 8), byte(fill)}, width)
+	for range height {
+		b.Write(row)
+	}
+	return b.Bytes()
+}
+
+func buildPPM16(width, height int, fill [3]uint16) []byte {
+	var b bytes.Buffer
+	fmt.Fprintf(&b, "P6\n%d %d\n65535\n", width, height)
+	row := make([]byte, 0, width*6)
+	for i := 0; i < width; i++ {
+		for _, s := range fill {
+			row = append(row, byte(s>>8), byte(s))
+		}
+	}
+	for range height {
+		b.Write(row)
+	}
+	return b.Bytes()
+}
+
+func TestDecodePNM_PGM16Bit(t *testing.T) {
+	cases := []struct {
+		fill uint16
+		want uint32 // expected 8-bit gray value
+	}{
+		{0x0000, 0},
+		{0xffff, 255},
+		{0x8080, 128}, // mid-gray: 32896*255/65535 rounds to 128
+	}
+	for _, tc := range cases {
+		img, err := decodePNM(bytes.NewReader(buildPGM16(4, 3, tc.fill)))
+		if err != nil {
+			t.Fatalf("fill %#x: %v", tc.fill, err)
+		}
+		if img.Bounds() != image.Rect(0, 0, 4, 3) {
+			t.Fatalf("fill %#x: unexpected bounds %v", tc.fill, img.Bounds())
+		}
+		r, _, _, _ := img.At(3, 2).RGBA()
+		if r>>8 != tc.want {
+			t.Errorf("fill %#x: gray = %d, want %d", tc.fill, r>>8, tc.want)
+		}
+	}
+}
+
+func TestDecodePNM_PPM16Bit(t *testing.T) {
+	img, err := decodePNM(bytes.NewReader(buildPPM16(2, 2, [3]uint16{0xffff, 0, 0x8000})))
+	if err != nil {
+		t.Fatal(err)
+	}
+	r, g, b, _ := img.At(1, 1).RGBA()
+	if r>>8 != 255 || g>>8 != 0 || b>>8 != 128 {
+		t.Errorf("got r=%d g=%d b=%d, want r=255 g=0 b=128", r>>8, g>>8, b>>8)
+	}
+}
+
+func TestDecodePNM_PGMNonStandardMaxval(t *testing.T) {
+	// maxval 100: full-scale must map to white, half-scale to mid-gray.
+	data := []byte("P5\n2 1\n100\n\x64\x32") // samples: 100, 50
+	img, err := decodePNM(bytes.NewReader(data))
+	if err != nil {
+		t.Fatal(err)
+	}
+	r0, _, _, _ := img.At(0, 0).RGBA()
+	r1, _, _, _ := img.At(1, 0).RGBA()
+	if r0>>8 != 255 {
+		t.Errorf("sample at maxval: gray = %d, want 255", r0>>8)
+	}
+	if r1>>8 != 128 {
+		t.Errorf("sample at maxval/2: gray = %d, want 128", r1>>8)
+	}
+}
+
+func TestDecodePNM_InvalidMaxval(t *testing.T) {
+	for _, hdr := range []string{"P5\n1 1\n0\n\x00", "P5\n1 1\n70000\n\x00\x00", "P6\n1 1\n0\n\x00\x00\x00"} {
+		if _, err := decodePNM(bytes.NewReader([]byte(hdr))); err == nil {
+			t.Errorf("header %q: expected error for invalid maxval", hdr[:12])
+		}
+	}
+}
+
 func TestDecodePNM_UnknownMagic(t *testing.T) {
 	_, err := decodePNM(bytes.NewReader([]byte("P3\n1 1\n255\n255 0 0\n")))
 	if err == nil {

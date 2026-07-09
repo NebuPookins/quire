@@ -274,15 +274,15 @@ func decodePNM(r io.Reader) (image.Image, error) {
 
 	switch magic {
 	case "P6": // binary PPM — Color
-		maxval, err := readInt(br)
+		maxval, err := readMaxval(br)
 		if err != nil {
-			return nil, fmt.Errorf("read maxval: %w", err)
+			return nil, err
 		}
 		return decodePPM(br, width, height, maxval)
 	case "P5": // binary PGM — Gray
-		maxval, err := readInt(br)
+		maxval, err := readMaxval(br)
 		if err != nil {
-			return nil, fmt.Errorf("read maxval: %w", err)
+			return nil, err
 		}
 		return decodePGM(br, width, height, maxval)
 	case "P4": // binary PBM — Lineart
@@ -292,23 +292,52 @@ func decodePNM(r io.Reader) (image.Image, error) {
 	}
 }
 
+// readMaxval reads and validates a PNM maxval. The PNM spec allows 1..65535;
+// samples are one byte each when maxval <= 255 and two big-endian bytes each
+// when maxval > 255.
+func readMaxval(br *bufio.Reader) (int, error) {
+	maxval, err := readInt(br)
+	if err != nil {
+		return 0, fmt.Errorf("read maxval: %w", err)
+	}
+	if maxval < 1 || maxval > 65535 {
+		return 0, fmt.Errorf("invalid PNM maxval %d", maxval)
+	}
+	return maxval, nil
+}
+
+// bytesPerSample returns the encoded size in bytes of one PNM sample.
+func bytesPerSample(maxval int) int {
+	if maxval > 255 {
+		return 2
+	}
+	return 1
+}
+
+// sampleAt8 extracts the i-th sample from a row of raw PNM bytes and scales
+// it from [0, maxval] to [0, 255], rounding to nearest.
+func sampleAt8(row []byte, i, maxval int) uint8 {
+	var v uint32
+	if maxval > 255 {
+		v = uint32(row[i*2])<<8 | uint32(row[i*2+1])
+	} else {
+		v = uint32(row[i])
+	}
+	return uint8((v*0xff + uint32(maxval)/2) / uint32(maxval))
+}
+
 func decodePPM(r io.Reader, width, height, maxval int) (image.Image, error) {
 	img := image.NewRGBA(image.Rect(0, 0, width, height))
-	buf := make([]byte, width*3)
-	scale := uint32(0xffff)
-	if maxval != 65535 {
-		scale = uint32(0xffff) / uint32(maxval)
-	}
+	buf := make([]byte, width*3*bytesPerSample(maxval))
 	for y := range height {
 		if _, err := io.ReadFull(r, buf); err != nil {
 			return nil, err
 		}
 		for x := range width {
-			r8, g8, b8 := buf[x*3], buf[x*3+1], buf[x*3+2]
 			img.SetRGBA(x, y, color.RGBA{
-				R: uint8(uint32(r8) * scale >> 8),
-				G: uint8(uint32(g8) * scale >> 8),
-				B: uint8(uint32(b8) * scale >> 8),
+				R: sampleAt8(buf, x*3, maxval),
+				G: sampleAt8(buf, x*3+1, maxval),
+				B: sampleAt8(buf, x*3+2, maxval),
 				A: 0xff,
 			})
 		}
@@ -318,17 +347,13 @@ func decodePPM(r io.Reader, width, height, maxval int) (image.Image, error) {
 
 func decodePGM(r io.Reader, width, height, maxval int) (image.Image, error) {
 	img := image.NewGray(image.Rect(0, 0, width, height))
-	buf := make([]byte, width)
-	scale := uint32(0xff)
-	if maxval != 255 {
-		scale = uint32(0xff) / uint32(maxval)
-	}
+	buf := make([]byte, width*bytesPerSample(maxval))
 	for y := range height {
 		if _, err := io.ReadFull(r, buf); err != nil {
 			return nil, err
 		}
 		for x := range width {
-			img.SetGray(x, y, color.Gray{Y: uint8(uint32(buf[x]) * scale)})
+			img.SetGray(x, y, color.Gray{Y: sampleAt8(buf, x, maxval)})
 		}
 	}
 	return img, nil
